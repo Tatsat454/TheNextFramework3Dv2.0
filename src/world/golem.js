@@ -261,7 +261,7 @@ export function createStoneGolem(area, heightAt, colliders, particles, template)
       const x = group.position.x;
       const z = group.position.z;
       const toCenter = car ? Math.hypot(car.x - area.x, car.z - area.z) : 999;
-      const toCar = car ? Math.hypot(car.x - x, car.z - z) : 999;
+      const toCar = car ? Math.hypot(car.x - x, (car.y ?? group.position.y) - (group.position.y + 1.6), car.z - z) : 999;
       if (toCar < TALK_RANGE) near = true;
       else if (toCar > TALK_LEAVE) near = false;
       if (!near) talking = false;

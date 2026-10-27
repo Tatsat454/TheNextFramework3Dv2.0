@@ -119,8 +119,7 @@ const keyMap = {
   ArrowLeft: "left",
   KeyD: "right",
   ArrowRight: "right",
-  ShiftLeft: "boost",
-  ShiftRight: "boost",
+  KeyR: "boost",
   Space: "jump",
   ControlLeft: "down",
   ControlRight: "down",
@@ -188,11 +187,19 @@ window.addEventListener("keydown", (event) => {
   }
   if (setKey(event.code, true)) event.preventDefault();
   if (event.repeat) return;
-  if (event.code === "KeyR") input.reset = true;
+  if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
+    input.reset = true;
+    event.preventDefault();
+  }
   if (event.code === "KeyC") follow.toggleChase();
   if (event.code === "KeyT") cycles.skip();
   if (event.code === "KeyE") areas.talk();
-  if (event.code === "KeyV") rideToast = vehicle.cycleRide();
+  if (event.code === "KeyV") {
+    rideToast = vehicle.cycleRide();
+    follow.alignTo(vehicle.heading);
+    follow.setFlyLook(vehicle.ride?.id === "ufo");
+  }
+  if (event.code === "KeyL") vehicle.toggleLights();
   const digit = /^Digit([0-4])$/.exec(event.code);
   if (digit) travel(Number(digit[1]) - 1);
 });
@@ -253,8 +260,14 @@ function tick(now) {
 
   if (started) {
     const steps = dt > 1 / 50 ? 2 : 1;
+    const flying = vehicle.ride?.id === "ufo";
+    follow.setFlyLook(flying);
+    const look = {
+      heading: follow.lookHeading(),
+      turnCamera: (delta) => follow.nudgeYaw(delta),
+    };
     for (let s = 0; s < steps; s++) {
-      vehicle.update(dt / steps, input);
+      vehicle.update(dt / steps, input, look);
       input.reset = false;
     }
     if (vehicle.state.impact > 4) follow.shake(vehicle.state.impact * 0.035);
@@ -295,7 +308,7 @@ function tick(now) {
     hud.toastEyebrow.textContent = "Now riding";
     hud.toastName.textContent = rideToast.name;
     hud.toastName.style.color = rideToast.color;
-    hud.toastTagline.textContent = rideToast.id === "dragapult" ? "Soar: WASD move, Space/Ctrl pitch, Shift dash, Q/F tricks. By LunaEagle" : "The island kart";
+    hud.toastTagline.textContent = rideToast.id === "ufo" ? "Mouse look, W camera-forward, S down, A/D turn. R dash, Shift boom, L light" : "The island kart";
     hud.toast.classList.add("is-visible");
     hud.toast.classList.remove("is-link", "has-progress", "is-story");
     delete hud.toast.dataset.url;
@@ -303,33 +316,46 @@ function tick(now) {
     toastTimer = 2.4;
     rideToast = null;
   }
+  const hideToast = () => {
+    hud.toast.classList.remove("is-visible", "is-link", "has-progress", "is-story");
+    delete hud.toast.dataset.url;
+    delete hud.toast.dataset.live;
+    hud.toast.removeAttribute("title");
+  };
+
   if (opened) {
     hud.toastEyebrow.textContent = "Opening";
     hud.toastName.textContent = opened.name;
     hud.toastName.style.color = opened.color;
     hud.toastTagline.textContent = opened.blocked ? "Click to open" : "See you over there";
     hud.toast.dataset.url = opened.url;
+    delete hud.toast.dataset.live;
     hud.toast.title = "Click to open in a new tab";
     hud.toast.classList.add("is-visible", "is-link");
     hud.toast.classList.remove("has-progress", "is-story");
     toastTimer = opened.blocked ? 6 : 2.6;
+    follow.setBlockLock(true);
   } else if (prompt) {
     hud.toastEyebrow.textContent = "Click the box to open";
     hud.toastName.textContent = prompt.name;
     hud.toastName.style.color = prompt.color;
     hud.toastTagline.textContent = prompt.bio || "Opens in a new tab";
     hud.toast.dataset.url = prompt.url;
+    hud.toast.dataset.live = "1";
     hud.toast.title = "Click to open in a new tab";
     hud.toast.classList.add("is-visible", "is-link");
     hud.toast.classList.toggle("is-story", Boolean(prompt.bio));
     hud.toast.classList.remove("has-progress");
     toastTimer = 0;
-  } else if (toastTimer > 0) {
-    toastTimer -= dt;
-    if (toastTimer <= 0) {
-      hud.toast.classList.remove("is-visible", "is-link", "has-progress", "is-story");
-      delete hud.toast.dataset.url;
-      hud.toast.removeAttribute("title");
+    follow.setBlockLock(true);
+  } else {
+    follow.setBlockLock(false);
+    if (hud.toast.dataset.live) {
+      hideToast();
+      toastTimer = 0;
+    } else if (toastTimer > 0) {
+      toastTimer -= dt;
+      if (toastTimer <= 0) hideToast();
     }
   }
 
@@ -340,7 +366,7 @@ function tick(now) {
     if (t >= 1) revealTime = -1;
   }
 
-  follow.update(dt, vehicle.position, vehicle.heading, vehicle.velocity, { soar: vehicle.ride?.id === "dragapult" });
+  follow.update(dt, vehicle.position, vehicle.heading, vehicle.velocity, { soar: vehicle.ride?.id === "ufo" });
   sky.mesh.position.copy(camera.position);
 
   carPoint.copy(vehicle.position);
