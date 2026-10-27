@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createEmissiveMaterial, createSolidMaterial, shared } from "./shading.js";
-import { damp } from "./noise.js";
+import { damp, dampAngle } from "./noise.js";
 
 const WHEEL_RADIUS = 0.52;
 const HALF_LENGTH = 1.35;
@@ -133,8 +133,191 @@ function buildCar() {
   return { root, body, wheels, lampMaterial, tailMaterial, flag };
 }
 
+const FLY_HOVER = 9;
+const FLY_CEILING = 78;
+const FLY_CLEARANCE = 1.6;
+
+function buildUfo() {
+  const holder = new THREE.Group();
+  const body = new THREE.Group();
+  const rimSpin = new THREE.Group();
+  holder.add(body);
+  body.add(rimSpin);
+
+  const hull = createSolidMaterial("#ece7f8");
+  const teal = createSolidMaterial("#3ad1c4");
+  const navy = createSolidMaterial("#2f2c45");
+  const cream = createSolidMaterial("#fff1dc");
+  const glass = createSolidMaterial("#8fd6ff");
+  const chrome = createSolidMaterial("#d7d9ea");
+  const lampMaterial = createEmissiveMaterial("#ffd56a");
+  const coreMaterial = createEmissiveMaterial("#7ef6ff");
+  const visorMaterial = createEmissiveMaterial("#9af7ff");
+
+  const saucer = new THREE.Mesh(new THREE.SphereGeometry(1.62, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), hull);
+  saucer.scale.set(1, 0.34, 1);
+  saucer.position.y = 0.62;
+  body.add(saucer);
+
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(1.38, 24, 12, 0, Math.PI * 2, Math.PI * 0.48, Math.PI * 0.45), chrome);
+  belly.scale.set(1, 0.3, 1);
+  belly.position.y = 0.5;
+  body.add(belly);
+
+  const band = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.18, 12, 32), teal);
+  band.rotation.x = Math.PI / 2;
+  band.position.y = 0.64;
+  rimSpin.add(band);
+
+  const cabin = new THREE.Mesh(new THREE.SphereGeometry(0.78, 22, 14, 0, Math.PI * 2, 0, Math.PI * 0.58), glass);
+  cabin.position.y = 1.08;
+  body.add(cabin);
+
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.96, 0.16, 18), cream);
+  collar.position.y = 0.86;
+  body.add(collar);
+
+  const seat = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), coreMaterial);
+  seat.position.y = 0.86;
+  body.add(seat);
+
+  const visor = new THREE.Mesh(new RoundedBoxGeometry(0.78, 0.2, 0.12, 2, 0.05), visorMaterial);
+  visor.position.set(0, 1.02, 0.68);
+  visor.rotation.x = -0.18;
+  body.add(visor);
+
+  const well = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.56, 0.18, 14), navy);
+  well.position.y = 0.2;
+  body.add(well);
+  const hatch = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 12), coreMaterial);
+  hatch.position.y = 0.12;
+  body.add(hatch);
+
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), lampMaterial);
+    lamp.position.set(Math.sin(angle) * 1.5, 0.54, Math.cos(angle) * 1.5);
+    rimSpin.add(lamp);
+  }
+
+  const fin = new THREE.Mesh(new RoundedBoxGeometry(0.08, 0.42, 0.55, 2, 0.04), teal);
+  fin.position.set(0, 0.92, -1.05);
+  fin.rotation.x = 0.35;
+  body.add(fin);
+  for (const side of [-1, 1]) {
+    const stab = new THREE.Mesh(new RoundedBoxGeometry(0.46, 0.08, 0.28, 2, 0.04), navy);
+    stab.position.set(side * 1.18, 0.7, -0.35);
+    stab.rotation.z = side * -0.18;
+    body.add(stab);
+  }
+
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), navy);
+  pole.position.y = 1.62;
+  const bead = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), createEmissiveMaterial("#ff5b4a"));
+  bead.position.y = 1.9;
+  body.add(pole, bead);
+
+  const beamMaterial = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    uniforms: { uBeam: { value: 1 } },
+    vertexShader: /* glsl */ `
+      varying float vAlong;
+      void main() {
+        vAlong = uv.y;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uBeam;
+      varying float vAlong;
+      void main() {
+        gl_FragColor = vec4(vec3(0.55, 1.0, 0.92) * pow(1.0 - vAlong, 1.35) * uBeam * 0.58, 1.0);
+      }
+    `,
+  });
+  const beam = new THREE.Mesh(new THREE.ConeGeometry(2.1, 9.2, 22, 1, true), beamMaterial);
+  beam.position.y = -4.3;
+  body.add(beam);
+
+  body.traverse((child) => {
+    if (child.isMesh && child.material !== beamMaterial) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  return { holder, body, rimSpin, lampMaterial, coreMaterial, visorMaterial, beamMaterial };
+}
+
+function createSonicBoom() {
+  const group = new THREE.Group();
+  group.visible = false;
+  const makeRing = (color, tube) => {
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(new THREE.TorusGeometry(1, tube, 8, 36), mat);
+    group.add(mesh);
+    return { mesh, mat };
+  };
+  const rings = [makeRing("#f4ffff", 0.07), makeRing("#7ef6ff", 0.16)];
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: "#ffffff",
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const flash = new THREE.Mesh(new THREE.CircleGeometry(1.35, 24), flashMat);
+  group.add(flash);
+  return { group, rings, flash, flashMat, time: 0, active: false };
+}
+
 export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colliders, particles }) {
   const car = buildCar();
+  const ufo = buildUfo();
+  const boom = createSonicBoom();
+  car.root.add(ufo.holder);
+  ufo.holder.visible = false;
+  const rides = [
+    { id: "car", name: "Kart", color: "#ff5b4a" },
+    { id: "ufo", name: "UFO", color: "#3ad1c4" },
+  ];
+  let rideIndex = 0;
+
+  const flying = () => rides[rideIndex].id === "ufo";
+
+  const applyRide = () => {
+    const ride = rides[rideIndex];
+    const isCar = ride.id === "car";
+    car.body.visible = isCar;
+    for (const wheel of car.wheels) wheel.steer.visible = isCar;
+    ufo.holder.visible = ride.id === "ufo";
+    const ground = groundHeight(position.x, position.z);
+    if (ride.id === "ufo") {
+      position.y = Math.max(position.y, ground + FLY_HOVER);
+      state.grounded = false;
+      state.airspeed = 0;
+      state.vy = 0;
+      state.stunt = null;
+    } else {
+      position.y = ground;
+      state.grounded = true;
+      state.vy = 0;
+      state.airspeed = 0;
+      state.flightPitch = 0;
+      state.flightRoll = 0;
+    }
+    return ride;
+  };
+
   const position = new THREE.Vector3(spawn.x, groundHeight(spawn.x, spawn.z), spawn.z);
   const velocity = new THREE.Vector2();
   const safe = { x: spawn.x, z: spawn.z, heading };
@@ -161,15 +344,27 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     impact: 0,
     inWater: false,
     jumpLatch: false,
+    airspeed: 0,
+    flightPitch: 0,
+    flightRoll: 0,
+    stunt: null,
+    stuntTime: 0,
+    boostLatch: false,
+    stuntLatch: false,
+    prevThrottle: 0,
+    ufoLight: true,
   };
 
   const respawn = (x, z, h) => {
-    position.set(x, groundHeight(x, z) + 2.5, z);
+    const lift = flying() ? FLY_HOVER : 2.5;
+    position.set(x, groundHeight(x, z) + lift, z);
     velocity.set(0, 0);
-    state.vy = 0;
+    state.vy = flying() ? 0 : 0;
     state.heading = h;
-    state.grounded = false;
+    state.grounded = !flying();
     state.sinkTimer = 0;
+    state.airspeed = 0;
+    state.stunt = null;
     car.root.visible = true;
   };
 
@@ -218,7 +413,213 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     }
   };
 
-  const update = (dt, input) => {
+  const startStunt = (name) => {
+    state.stunt = name;
+    state.stuntTime = 0;
+  };
+
+  const fireSonicBoom = () => {
+    boom.active = true;
+    boom.time = 0;
+    boom.group.visible = true;
+    boom.group.position.set(position.x, position.y + 0.65, position.z);
+    boom.group.rotation.set(0, state.heading, 0);
+    if (car.root.parent && boom.group.parent !== car.root.parent) car.root.parent.add(boom.group);
+    const hx = Math.sin(state.heading);
+    const hz = Math.cos(state.heading);
+    for (let i = 0; i < 26; i++) {
+      const angle = (i / 26) * Math.PI * 2;
+      const rx = Math.cos(angle) * 1.35;
+      const ry = Math.sin(angle) * 1.35;
+      particles.emit({
+        position: new THREE.Vector3(position.x + Math.cos(state.heading) * rx, position.y + 0.65 + ry, position.z - Math.sin(state.heading) * rx),
+        velocity: new THREE.Vector3(-hx * 20, ry * 0.8, -hz * 20),
+        color: i % 2 ? "#f4ffff" : "#7ef6ff",
+        size: 0.72,
+        life: 0.5,
+        gravity: 0,
+        spread: 0.25,
+      });
+    }
+    particles.emit({
+      position: new THREE.Vector3(position.x, position.y + 0.55, position.z),
+      velocity: new THREE.Vector3(-hx * 10, 1.2, -hz * 10),
+      color: "#c6fff6",
+      size: 0.95,
+      life: 0.7,
+      gravity: 0,
+      spread: 1.8,
+      count: 18,
+    });
+    state.impact = 12;
+  };
+
+  const updateBoomFx = (dt) => {
+    if (!boom.active) return;
+    boom.time += dt;
+    const t = boom.time;
+    boom.flashMat.opacity = t < 0.1 ? (1 - t / 0.1) * 0.85 : 0;
+    boom.flash.scale.setScalar(1 + t * 10);
+    boom.rings.forEach((ring, index) => {
+      const u = Math.min(1, (t - index * 0.07) / 0.4);
+      if (u <= 0) {
+        ring.mat.opacity = 0;
+        return;
+      }
+      ring.mesh.scale.setScalar(0.55 + u * 8.2);
+      ring.mat.opacity = (1 - u) * (1 - u) * 0.95;
+    });
+    if (t > 0.58) {
+      boom.active = false;
+      boom.group.visible = false;
+    }
+  };
+
+  const updateFlight = (dt, input, look = {}) => {
+    const lookHeading = look.heading ?? state.heading;
+    const throttle = input.forward ? 1 : 0;
+    const pitchInput = (input.jump ? 1 : 0) - (input.down ? 1 : 0);
+    const steerTarget = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+    state.steer = damp(state.steer, steerTarget, 8, dt);
+
+    const wantDash = input.boost && input.forward;
+    if (wantDash && !state.boostLatch && !state.stunt) startStunt("dash");
+    const wantTrick = input.somersault || input.loop;
+    if (wantTrick && !state.stuntLatch && !state.stunt && input.forward) startStunt(input.somersault ? "somersault" : "loop");
+    if (input.reset && !state.stunt) {
+      startStunt("boom");
+      fireSonicBoom();
+    }
+    state.boostLatch = input.boost;
+    state.stuntLatch = wantTrick;
+    state.prevThrottle = throttle;
+
+    let posePitch = 0;
+    let poseRoll = state.steer * 0.38;
+    let move = 0;
+
+    if (state.stunt) {
+      state.stuntTime += dt;
+      const t = state.stuntTime;
+      if (state.stunt === "dash") {
+        move = 36;
+        poseRoll = (t / 0.62) * Math.PI * 2;
+        posePitch = -0.08;
+        if (t >= 0.62) state.stunt = null;
+      } else if (state.stunt === "boom") {
+        move = 54;
+        posePitch = -0.12;
+        poseRoll = Math.sin(t * 18) * 0.08;
+        if (Math.random() < 0.7) {
+          particles.emit({
+            position: new THREE.Vector3(position.x, position.y + 0.4, position.z),
+            velocity: new THREE.Vector3(-Math.sin(state.heading) * 6, 0.4, -Math.cos(state.heading) * 6),
+            color: "#d8fff8",
+            size: 0.7,
+            life: 0.35,
+            gravity: 0,
+            spread: 1.1,
+            count: 2,
+          });
+        }
+        if (t >= 0.52) {
+          state.stunt = null;
+          state.airspeed = 26;
+        }
+      } else if (state.stunt === "loop") {
+        const u = Math.min(1, t / 1.15);
+        const a = u * Math.PI * 2;
+        move = 20;
+        posePitch = -a;
+        position.y += Math.cos(a) * 26 * dt;
+        if (t >= 1.15) state.stunt = null;
+      } else if (state.stunt === "somersault") {
+        const u = Math.min(1, t / 1.05);
+        const a = u * Math.PI * 2;
+        move = 18;
+        posePitch = a;
+        poseRoll = a * 1.4;
+        position.y -= 14 * dt;
+        if (t >= 1.05) state.stunt = null;
+      } else if (state.stunt === "uturn") {
+        const u = Math.min(1, t / 0.95);
+        posePitch = -u * Math.PI;
+        poseRoll = Math.sin(u * Math.PI) * 0.8;
+        move = 16;
+        position.y += Math.sin(u * Math.PI) * 18 * dt;
+        if (t >= 0.95) {
+          state.heading += Math.PI;
+          state.stunt = null;
+          posePitch = 0;
+        }
+      }
+    } else {
+      const cruise = input.boost ? 28 : 18;
+      if (input.forward) state.airspeed = damp(state.airspeed, cruise, 3.2, dt);
+      else state.airspeed = damp(state.airspeed, 0, 2.2, dt);
+      state.airspeed = Math.max(0, state.airspeed);
+      move = state.airspeed;
+      const moving = state.airspeed > 1.4;
+      const pitchTarget = moving ? THREE.MathUtils.clamp(-pitchInput * 0.48, -0.5, 0.5) : 0;
+      posePitch = damp(state.flightPitch, pitchTarget, 7, dt);
+    }
+
+    if (!state.stunt) {
+      const turn = state.steer * 1.85 * dt;
+      state.heading += turn;
+      look.turnCamera?.(turn);
+      if (input.forward) state.heading = dampAngle(state.heading, lookHeading, 10, dt);
+    }
+
+    const signedSpeed = Math.max(0, state.stunt ? move : state.airspeed);
+    const flyHeading = !state.stunt && input.forward ? lookHeading : state.heading;
+    const nextX = position.x + Math.sin(flyHeading) * signedSpeed * dt;
+    const nextZ = position.z + Math.cos(flyHeading) * signedSpeed * dt;
+    const limit = Math.hypot(nextX, nextZ);
+    if (limit > WORLD_LIMIT && state.stunt !== "uturn") {
+      startStunt("uturn");
+      position.x *= WORLD_LIMIT / Math.max(limit, 1e-3);
+      position.z *= WORLD_LIMIT / Math.max(limit, 1e-3);
+    } else if (limit > WORLD_LIMIT) {
+      position.x = (nextX / limit) * WORLD_LIMIT;
+      position.z = (nextZ / limit) * WORLD_LIMIT;
+    } else {
+      position.x = nextX;
+      position.z = nextZ;
+    }
+
+    if (!state.stunt || state.stunt === "dash" || state.stunt === "boom") {
+      const climb = signedSpeed * Math.sin(-posePitch);
+      position.y += climb * dt;
+    }
+    if (!state.stunt && input.backward) position.y -= 18 * dt;
+
+    const floor = groundHeight(position.x, position.z) + FLY_CLEARANCE;
+    if (position.y < floor) position.y = floor;
+    if (position.y > FLY_CEILING) position.y = FLY_CEILING;
+
+    velocity.set(Math.sin(flyHeading) * signedSpeed, Math.cos(flyHeading) * signedSpeed);
+    state.airspeed = signedSpeed;
+    state.flightPitch = posePitch;
+    state.flightRoll = poseRoll;
+    state.pitch = posePitch;
+    state.roll = poseRoll;
+    state.vy = 0;
+    state.grounded = false;
+    state.inWater = false;
+    state.bodyPitch = posePitch;
+    state.bodyRoll = poseRoll;
+
+    if (position.y > floor + 2) {
+      safe.x = position.x;
+      safe.z = position.z;
+      safe.heading = state.heading;
+    }
+
+    syncVisuals(dt, input, Math.abs(signedSpeed));
+  };
+
+  const update = (dt, input, look = {}) => {
     state.impact = 0;
     if (state.sinkTimer > 0) {
       state.sinkTimer += dt;
@@ -231,8 +632,14 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
       return;
     }
 
-    if (input.reset) {
+    if (input.reset && !flying()) {
       respawn(safe.x, safe.z, safe.heading);
+    }
+
+    if (flying()) {
+      updateFlight(dt, input, look);
+      updateBoomFx(dt);
+      return;
     }
 
     forward.set(Math.sin(state.heading), Math.cos(state.heading));
@@ -408,41 +815,64 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     state.bodyRoll = damp(state.bodyRoll, THREE.MathUtils.clamp(lateralAccel * 0.006, -0.14, 0.14), 6, dt);
 
     syncVisuals(dt, input, forwardSpeed);
+    updateBoomFx(dt);
   };
 
   const syncVisuals = (dt, input, forwardSpeed = 0) => {
-    const sin = Math.sin(state.heading);
-    const cos = Math.cos(state.heading);
-    const sample = (lx, lz) => groundHeight(position.x + sin * lz + cos * lx, position.z + cos * lz - sin * lx);
-    let targetPitch = 0;
-    let targetRoll = 0;
-    if (state.grounded) {
-      const front = sample(0, HALF_LENGTH);
-      const back = sample(0, -HALF_LENGTH);
-      const left = sample(HALF_WIDTH, 0);
-      const right = sample(-HALF_WIDTH, 0);
-      targetPitch = Math.atan2(back - front, HALF_LENGTH * 2);
-      targetRoll = Math.atan2(left - right, HALF_WIDTH * 2);
+    if (flying()) {
+      state.pitch = damp(state.pitch, state.flightPitch, 8, dt);
+      state.roll = damp(state.roll, state.flightRoll, 8, dt);
     } else {
-      targetPitch = THREE.MathUtils.clamp(-state.vy * 0.025, -0.4, 0.4);
+      const sin = Math.sin(state.heading);
+      const cos = Math.cos(state.heading);
+      const sample = (lx, lz) => groundHeight(position.x + sin * lz + cos * lx, position.z + cos * lz - sin * lx);
+      let targetPitch = 0;
+      let targetRoll = 0;
+      if (state.grounded) {
+        const front = sample(0, HALF_LENGTH);
+        const back = sample(0, -HALF_LENGTH);
+        const left = sample(HALF_WIDTH, 0);
+        const right = sample(-HALF_WIDTH, 0);
+        targetPitch = Math.atan2(back - front, HALF_LENGTH * 2);
+        targetRoll = Math.atan2(left - right, HALF_WIDTH * 2);
+      } else {
+        targetPitch = THREE.MathUtils.clamp(-state.vy * 0.025, -0.4, 0.4);
+      }
+      state.pitch = damp(state.pitch, targetPitch, state.grounded ? 14 : 2.5, dt);
+      state.roll = damp(state.roll, targetRoll, state.grounded ? 14 : 2.5, dt);
     }
-    state.pitch = damp(state.pitch, targetPitch, state.grounded ? 14 : 2.5, dt);
-    state.roll = damp(state.roll, targetRoll, state.grounded ? 14 : 2.5, dt);
 
     const spring = -state.bodyOffset * 140 - state.bodyVelocity * 11;
     state.bodyVelocity += spring * dt;
     state.bodyOffset += state.bodyVelocity * dt;
 
     car.root.position.copy(position);
-    car.root.rotation.set(state.pitch, state.heading, state.roll, "YXZ");
+    if (flying()) car.root.rotation.set(0, state.heading, 0, "YXZ");
+    else car.root.rotation.set(state.pitch, state.heading, state.roll, "YXZ");
     car.body.position.y = state.bodyOffset * 0.6;
     car.body.rotation.set(state.bodyPitch, 0, state.bodyRoll);
 
-    for (const wheel of car.wheels) {
-      wheel.spin.rotation.x += (forwardSpeed / WHEEL_RADIUS) * dt;
-      if (wheel.front) wheel.steer.rotation.y = state.steer * 0.42;
+    if (car.body.visible) {
+      for (const wheel of car.wheels) {
+        wheel.spin.rotation.x += (forwardSpeed / WHEEL_RADIUS) * dt;
+        if (wheel.front) wheel.steer.rotation.y = state.steer * 0.42;
+      }
+      car.flag.rotation.y = Math.sin(performance.now() * 0.012) * 0.25 - Math.min(0.6, Math.abs(forwardSpeed) * 0.03);
     }
-    car.flag.rotation.y = Math.sin(performance.now() * 0.012) * 0.25 - Math.min(0.6, Math.abs(forwardSpeed) * 0.03);
+    if (ufo.holder.visible) {
+      const dash = state.stunt === "dash" || state.stunt === "boom" || input.boost;
+      ufo.holder.position.y = 0.16 + Math.sin(shared.uTime.value * 2.4) * 0.1;
+      ufo.holder.rotation.x = state.flightPitch;
+      ufo.holder.rotation.z = state.flightRoll;
+      ufo.rimSpin.rotation.y += (1.4 + Math.abs(forwardSpeed) * 0.06 + (dash ? 4 : 0)) * dt;
+      const night = shared.uNight.value;
+      const lit = state.ufoLight ? 1 : 0;
+      const pulse = 0.55 + night * 0.35 + lit * 0.7 + (dash ? 0.45 : 0) + Math.sin(shared.uTime.value * 8) * 0.08 * lit;
+      ufo.lampMaterial.color.setRGB(1, 0.84, 0.4).multiplyScalar(pulse);
+      ufo.coreMaterial.color.setRGB(0.5, 1, 0.96).multiplyScalar(0.55 + night * 0.25 + lit * 0.7 + (dash ? 0.35 : 0));
+      ufo.visorMaterial.color.setRGB(0.6, 0.97, 1).multiplyScalar(0.55 + night * 0.25 + lit * 0.55);
+      ufo.beamMaterial.uniforms.uBeam.value = damp(ufo.beamMaterial.uniforms.uBeam.value, lit, 10, Math.max(dt, 1e-3));
+    }
 
     const night = shared.uNight.value;
     car.lampMaterial.color.setRGB(1, 0.96, 0.82).multiplyScalar(0.7 + night * 0.8);
@@ -450,6 +880,7 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     car.tailMaterial.color.setRGB(1, 0.22, 0.22).multiplyScalar(braking ? 1.6 : 0.55 + night * 0.4);
   };
 
+  applyRide();
   syncVisuals(0, {});
 
   return {
@@ -459,10 +890,26 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     state,
     radius: CAR_RADIUS,
     get speed() {
-      return velocity.length();
+      return flying() ? Math.abs(state.airspeed) : velocity.length();
     },
     get heading() {
       return state.heading;
+    },
+    get ride() {
+      return rides[rideIndex];
+    },
+    get lights() {
+      return state.ufoLight;
+    },
+    toggleLights() {
+      state.ufoLight = !state.ufoLight;
+      ufo.beamMaterial.uniforms.uBeam.value = state.ufoLight ? 1 : 0;
+      return state.ufoLight;
+    },
+    cycleRide() {
+      if (rides.length < 2) return rides[rideIndex];
+      rideIndex = (rideIndex + 1) % rides.length;
+      return applyRide();
     },
     update,
     teleport(x, z, h) {

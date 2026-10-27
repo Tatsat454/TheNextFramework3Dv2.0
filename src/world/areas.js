@@ -595,6 +595,7 @@ function createMarketDecor(area, heightAt, colliders) {
       url: theme.url,
       color: theme.color,
       x,
+      y: area.y + 1.2,
       z,
       near: false,
       fired: false,
@@ -653,7 +654,7 @@ function createMarketDecor(area, heightAt, colliders) {
       let nearest = null;
       let nearestDistance = 4.6;
       for (const stall of stalls) {
-        const distance = Math.hypot(car.x - stall.x, car.z - stall.z);
+        const distance = Math.hypot(car.x - stall.x, (car.y ?? stall.y) - stall.y, car.z - stall.z);
         if (distance < nearestDistance) {
           nearest = stall;
           nearestDistance = distance;
@@ -884,7 +885,8 @@ export async function createAreas({ terrain, colliders, particles, camera }) {
       let current = null;
       for (const { area, beacon, decor } of built) {
         const distance = Math.hypot(carPosition.x - area.x, carPosition.z - area.z);
-        const inside = distance < area.radius + 2;
+        const heightGap = Math.abs((carPosition.y ?? area.y) - area.y);
+        const inside = distance < area.radius + 2 && heightGap < 7;
         if (inside) current = area;
         const target = THREE.MathUtils.smoothstep(distance, area.radius * 0.6, area.radius * 2.2);
         beacon.material.uniforms.uFade.value += (target - beacon.material.uniforms.uFade.value) * Math.min(1, dt * 3);

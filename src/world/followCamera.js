@@ -23,23 +23,42 @@ export function createFollowCamera(camera, domElement) {
     lastX: 0,
     lastY: 0,
     idle: 0,
+    flyLook: false,
+    blockLock: false,
+  };
+
+  const look = (dx, dy) => {
+    state.targetTheta -= dx * 0.006;
+    state.targetPhi = THREE.MathUtils.clamp(state.targetPhi - dy * 0.004, 0.35, 1.32);
+    state.idle = 0;
+  };
+
+  const releaseLook = () => {
+    state.dragging = false;
+    if (document.pointerLockElement === domElement) document.exitPointerLock?.();
   };
 
   domElement.addEventListener("pointerdown", (event) => {
+    if (event.target !== domElement) return;
+    if (state.blockLock) return;
+    if (document.pointerLockElement === domElement) {
+      releaseLook();
+      return;
+    }
     state.dragging = true;
     state.lastX = event.clientX;
     state.lastY = event.clientY;
     domElement.setPointerCapture(event.pointerId);
+    if (state.flyLook) domElement.requestPointerLock?.();
   });
   domElement.addEventListener("pointermove", (event) => {
-    if (!state.dragging) return;
-    const dx = event.clientX - state.lastX;
-    const dy = event.clientY - state.lastY;
+    const locked = document.pointerLockElement === domElement;
+    if (!state.dragging && !locked) return;
+    const dx = locked ? event.movementX : event.clientX - state.lastX;
+    const dy = locked ? event.movementY : event.clientY - state.lastY;
     state.lastX = event.clientX;
     state.lastY = event.clientY;
-    state.targetTheta -= dx * 0.006;
-    state.targetPhi = THREE.MathUtils.clamp(state.targetPhi - dy * 0.004, 0.35, 1.32);
-    state.idle = 0;
+    look(dx, dy);
   });
   const release = () => {
     state.dragging = false;
@@ -60,6 +79,30 @@ export function createFollowCamera(camera, domElement) {
     toggleChase() {
       state.chase = !state.chase;
     },
+    setFlyLook(on) {
+      state.flyLook = on;
+      if (!on) releaseLook();
+    },
+    setBlockLock(on) {
+      if (state.blockLock === on) return;
+      state.blockLock = on;
+      if (on) releaseLook();
+    },
+    releaseLook,
+    alignTo(heading) {
+      const theta = heading + Math.PI;
+      state.targetTheta = theta;
+      state.theta = theta;
+      state.chaseTheta = theta;
+    },
+    nudgeYaw(delta) {
+      state.targetTheta += delta;
+      state.theta += delta;
+      state.chaseTheta += delta;
+    },
+    lookHeading() {
+      return Math.atan2(smoothedFocus.x - camera.position.x, smoothedFocus.z - camera.position.z);
+    },
     shake(amount) {
       state.shake = Math.min(1.4, state.shake + amount);
     },
@@ -70,11 +113,11 @@ export function createFollowCamera(camera, domElement) {
       focus.copy(target);
       smoothedFocus.copy(target);
     },
-    update(dt, target, heading, velocity) {
+    update(dt, target, heading, velocity, options = {}) {
       lookAhead.set(velocity.x * 0.32, 0, velocity.y * 0.32);
       lookAhead.clampLength(0, 7);
       focus.copy(target).add(lookAhead);
-      focus.y += 1.2;
+      focus.y += options.soar ? 0.4 : 1.2;
       smoothedFocus.x = damp(smoothedFocus.x, focus.x, 5, dt);
       smoothedFocus.y = damp(smoothedFocus.y, focus.y, 3, dt);
       smoothedFocus.z = damp(smoothedFocus.z, focus.z, 5, dt);
@@ -82,7 +125,14 @@ export function createFollowCamera(camera, domElement) {
       let theta;
       let phi;
       let radius;
-      if (state.chase) {
+      if (options.soar) {
+        state.theta = damp(state.theta, state.targetTheta, 8, dt);
+        state.phi = damp(state.phi, state.targetPhi, 8, dt);
+        state.radius = damp(state.radius, state.targetRadius, 6, dt);
+        theta = state.theta;
+        phi = state.phi;
+        radius = state.radius;
+      } else if (state.chase) {
         state.chaseTheta = damp(state.chaseTheta, heading + Math.PI, 3.5, dt);
         theta = state.chaseTheta;
         phi = 1.2;

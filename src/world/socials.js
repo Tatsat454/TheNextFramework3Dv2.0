@@ -210,7 +210,7 @@ export function createSocialLogos(area, heightAt, colliders, template = {}) {
       let nearest = null;
       let nearestDistance = NEAR_RADIUS;
       for (const logo of logos) {
-        const distance = Math.hypot(car.x - logo.x, car.z - logo.z);
+        const distance = Math.hypot(car.x - logo.x, (car.y ?? logo.ground) - (logo.ground + 1.4), car.z - logo.z);
         if (distance < nearestDistance) {
           nearest = logo;
           nearestDistance = distance;
