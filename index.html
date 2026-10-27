@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Next Framework</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;800;900&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <section id="intro">
+      <div class="intro-card">
+        <p class="eyebrow">An island made with Three.js</p>
+        <h1>The Next<br />Framework</h1>
+        <p class="lede">Hop in, knock the letters over, and find four places around the island. At Stone Circle, press E to talk to Sam, then click the box to open my links. At Market Row, drive up to a stall and click the box to open a project.</p>
+        <p class="keys-hint">Social sculptures by <a href="https://bruno-simon.com" target="_blank" rel="noreferrer">Bruno Simon</a> (MIT)</p>
+        <button id="start" type="button">Start the engine</button>
+        <p class="keys-hint">or press Enter</p>
+      </div>
+    </section>
+
+    <div id="hud">
+      <button class="chip time" id="time" type="button" title="Skip time (T)">Day</button>
+      <canvas class="minimap" id="minimap"></canvas>
+      <div class="chip destinations" id="destinations"></div>
+      <div class="toast" id="toast">
+        <span class="toast-leave" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+            <path d="M14 4h6v6" />
+            <path d="M13 11 20 4" />
+          </svg>
+          Open
+        </span>
+        <p class="toast-eyebrow" id="toast-eyebrow">Now arriving</p>
+        <p class="toast-name" id="toast-name"></p>
+        <p class="toast-tagline" id="toast-tagline"></p>
+        <div class="toast-progress" id="toast-progress"><i id="toast-progress-fill"></i></div>
+      </div>
+      <div class="chip speed"><span id="speed">0</span><small>km/h</small></div>
+      <div class="chip controls" id="controls">
+        <button class="controls-toggle" id="controls-toggle" type="button" aria-expanded="false" aria-controls="controls-panel" title="Controls">
+          <span class="controls-bars" aria-hidden="true"></span>
+        </button>
+        <div class="controls-panel" id="controls-panel">
+          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
+          <span><kbd>Shift</kbd> boost</span>
+          <span><kbd>Space</kbd> jump</span>
+          <span><kbd>R</kbd> reset</span>
+          <span><kbd>C</kbd> camera</span>
+          <span><kbd>T</kbd> time</span>
+          <span><kbd>1</kbd>-<kbd>4</kbd> travel</span>
+          <span><kbd>0</kbd> home</span>
+          <span><kbd>E</kbd> talk</span>
+          <span>click the box to open</span>
+        </div>
+      </div>
+      <div class="dialogue" id="dialogue">
+        <p class="dialogue-name" id="dialogue-name">Sam</p>
+        <p class="dialogue-line" id="dialogue-line"></p>
+        <p class="dialogue-hint" id="dialogue-hint">E to talk</p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

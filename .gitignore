@@ -6,3 +6,11 @@ dist/
 .DS_Store
 *.log
 .vite/
+
+# Unused source models (runtime assets live in public/)
+Mutant Walking.fbx
+island terrain 3d model.glb
+lava golem 3d model.glb
+stone+pedestal+3d+model.glb
+public/golem.glb
+public/pedestal.glb
