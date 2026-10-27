@@ -48,7 +48,7 @@ body {
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
   box-shadow: 0 30px 80px rgba(60, 60, 140, 0.25), inset 0 0 0 1.5px rgba(255, 255, 255, 0.7);
-  max-width: min(520px, calc(100vw - 32px));
+  max-width: min(560px, calc(100vw - 32px));
   animation: rise 1s cubic-bezier(0.2, 0.9, 0.2, 1) both;
 }
 
@@ -63,8 +63,8 @@ body {
 
 h1 {
   margin: 0;
-  font-size: clamp(44px, 8vw, 74px);
-  line-height: 0.95;
+  font-size: clamp(34px, 6vw, 54px);
+  line-height: 1.05;
   font-weight: 900;
   letter-spacing: -0.02em;
   background: linear-gradient(120deg, #ff5b4a 0%, #ffb547 40%, #4fc3f7 75%, #7c6cf0 100%);
@@ -73,11 +73,19 @@ h1 {
   color: transparent;
 }
 
+h1 span {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.42em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .lede {
-  margin: 18px auto 26px;
-  max-width: 360px;
+  margin: 18px auto 28px;
+  max-width: 420px;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.45;
   color: #4b4775;
 }
