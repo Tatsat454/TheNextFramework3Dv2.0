@@ -93,7 +93,7 @@ scene.add(letters.group);
 
 scene.add(createFireflies({ terrain, random }));
 
-const vehicle = createVehicle({
+const vehicle = await createVehicle({
   spawn: { x: features.spawn.x + 2, z: features.spawn.z + 5 },
   heading: Math.PI,
   groundHeight,
@@ -109,7 +109,7 @@ const cycles = createCycles(sky);
 
 shared.uRevealCenter.value.set(vehicle.position.x, vehicle.position.z);
 
-const input = { forward: false, backward: false, left: false, right: false, boost: false, jump: false, reset: false };
+const input = { forward: false, backward: false, left: false, right: false, boost: false, jump: false, down: false, somersault: false, loop: false, reset: false };
 const keyMap = {
   KeyW: "forward",
   ArrowUp: "forward",
@@ -122,6 +122,10 @@ const keyMap = {
   ShiftLeft: "boost",
   ShiftRight: "boost",
   Space: "jump",
+  ControlLeft: "down",
+  ControlRight: "down",
+  KeyQ: "somersault",
+  KeyF: "loop",
 };
 
 const hud = {
@@ -154,6 +158,7 @@ destinationList.innerHTML = areas.areas
   .join("");
 let currentArea = null;
 let toastTimer = 0;
+let rideToast = null;
 
 const spawnPoint = { x: features.spawn.x + 2, z: features.spawn.z + 5, heading: Math.PI };
 const travel = (index) => {
@@ -187,6 +192,7 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "KeyC") follow.toggleChase();
   if (event.code === "KeyT") cycles.skip();
   if (event.code === "KeyE") areas.talk();
+  if (event.code === "KeyV") rideToast = vehicle.cycleRide();
   const digit = /^Digit([0-4])$/.exec(event.code);
   if (digit) travel(Number(digit[1]) - 1);
 });
@@ -285,6 +291,18 @@ function tick(now) {
       toastTimer = 3.5;
     }
   }
+  if (rideToast) {
+    hud.toastEyebrow.textContent = "Now riding";
+    hud.toastName.textContent = rideToast.name;
+    hud.toastName.style.color = rideToast.color;
+    hud.toastTagline.textContent = rideToast.id === "dragapult" ? "Soar: WASD move, Space/Ctrl pitch, Shift dash, Q/F tricks. By LunaEagle" : "The island kart";
+    hud.toast.classList.add("is-visible");
+    hud.toast.classList.remove("is-link", "has-progress", "is-story");
+    delete hud.toast.dataset.url;
+    hud.toast.removeAttribute("title");
+    toastTimer = 2.4;
+    rideToast = null;
+  }
   if (opened) {
     hud.toastEyebrow.textContent = "Opening";
     hud.toastName.textContent = opened.name;
@@ -322,7 +340,7 @@ function tick(now) {
     if (t >= 1) revealTime = -1;
   }
 
-  follow.update(dt, vehicle.position, vehicle.heading, vehicle.velocity);
+  follow.update(dt, vehicle.position, vehicle.heading, vehicle.velocity, { soar: vehicle.ride?.id === "dragapult" });
   sky.mesh.position.copy(camera.position);
 
   carPoint.copy(vehicle.position);

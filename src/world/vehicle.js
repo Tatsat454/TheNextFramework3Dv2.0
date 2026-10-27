@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createEmissiveMaterial, createSolidMaterial, shared } from "./shading.js";
 import { damp } from "./noise.js";
@@ -133,8 +134,120 @@ function buildCar() {
   return { root, body, wheels, lampMaterial, tailMaterial, flag };
 }
 
-export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colliders, particles }) {
+const DRAGAPULT_HEIGHT = 3.15;
+const FLY_HOVER = 9;
+const FLY_CEILING = 78;
+const FLY_CLEARANCE = 1.6;
+
+function fitModelToGround(root) {
+  root.rotation.set(0, 0, 0);
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  const center = box.getCenter(new THREE.Vector3());
+  root.position.x -= center.x;
+  root.position.z -= center.z;
+  root.position.y -= box.min.y;
+  root.updateMatrixWorld(true);
+  return new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
+}
+
+function stripRootMotion(clip) {
+  const tracks = clip.tracks.filter((track) => !/^(Origin|Waist)\.position$/i.test(track.name));
+  return new THREE.AnimationClip(clip.name, clip.duration, tracks);
+}
+
+async function loadDragapult() {
+  const loader = new FBXLoader();
+  loader.setResourcePath("/dragapult/");
+  const fbx = await loader.loadAsync("/dragapult/dragapult.fbx");
+  fbx.traverse((child) => {
+    if (!child.isMesh) return;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    child.frustumCulled = false;
+  });
+  const mixer = new THREE.AnimationMixer(fbx);
+  const actions = {};
+  for (const clip of fbx.animations ?? []) {
+    const name = clip.name.toLowerCase();
+    const action = mixer.clipAction(stripRootMotion(clip));
+    action.enabled = true;
+    action.setLoop(THREE.LoopRepeat, Infinity);
+    action.clampWhenFinished = false;
+    action.play();
+    action.setEffectiveWeight(0);
+    if (name.includes("tokusyu")) actions.fly = action;
+    else if (name.includes("buturi")) actions.boost = action;
+    else if (name.includes("roar")) actions.roar = action;
+    else if (name.includes("wait")) actions.hover = action;
+  }
+  if (!actions.fly) actions.fly = actions.boost ?? actions.hover ?? Object.values(actions)[0];
+  if (!actions.hover) actions.hover = actions.fly;
+  if (!actions.boost) actions.boost = actions.fly;
+  if (!actions.roar) actions.roar = actions.boost;
+  actions.fly.setEffectiveWeight(1);
+  mixer.update(0.2);
+  const size = fitModelToGround(fbx);
+  const scale = DRAGAPULT_HEIGHT / Math.max(size.y, 0.001);
+  const holder = new THREE.Group();
+  holder.add(fbx);
+  holder.scale.setScalar(scale);
+  return { holder, mixer, actions, current: "fly" };
+}
+
+export async function createVehicle({ spawn, heading = 0, groundHeight, terrain, colliders, particles }) {
   const car = buildCar();
+  let dragapult = null;
+  try {
+    dragapult = await loadDragapult();
+    car.root.add(dragapult.holder);
+    dragapult.holder.visible = false;
+  } catch (error) {
+    console.warn("Dragapult failed to load", error);
+  }
+  const rides = [{ id: "car", name: "Kart", color: "#ff5b4a" }];
+  if (dragapult) rides.push({ id: "dragapult", name: "Dragapult", color: "#5ad6c8" });
+  let rideIndex = 0;
+
+  const flying = () => rides[rideIndex].id === "dragapult";
+
+  const playDragapult = (name) => {
+    if (!dragapult || dragapult.current === name) return;
+    const next = dragapult.actions[name];
+    const prev = dragapult.actions[dragapult.current];
+    if (!next || next === prev) return;
+    next.enabled = true;
+    next.setEffectiveWeight(0);
+    next.fadeIn(0.28);
+    prev?.fadeOut(0.28);
+    dragapult.current = name;
+  };
+
+  const applyRide = () => {
+    const ride = rides[rideIndex];
+    const isCar = ride.id === "car";
+    car.body.visible = isCar;
+    for (const wheel of car.wheels) wheel.steer.visible = isCar;
+    if (dragapult) dragapult.holder.visible = ride.id === "dragapult";
+    const ground = groundHeight(position.x, position.z);
+    if (ride.id === "dragapult") {
+      position.y = Math.max(position.y, ground + FLY_HOVER);
+      state.grounded = false;
+      state.airspeed = 0;
+      state.vy = 0;
+      state.stunt = null;
+      playDragapult("fly");
+    } else {
+      position.y = ground;
+      state.grounded = true;
+      state.vy = 0;
+      state.airspeed = 0;
+      state.flightPitch = 0;
+      state.flightRoll = 0;
+    }
+    return ride;
+  };
+
   const position = new THREE.Vector3(spawn.x, groundHeight(spawn.x, spawn.z), spawn.z);
   const velocity = new THREE.Vector2();
   const safe = { x: spawn.x, z: spawn.z, heading };
@@ -161,15 +274,26 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     impact: 0,
     inWater: false,
     jumpLatch: false,
+    airspeed: 0,
+    flightPitch: 0,
+    flightRoll: 0,
+    stunt: null,
+    stuntTime: 0,
+    boostLatch: false,
+    stuntLatch: false,
+    prevThrottle: 0,
   };
 
   const respawn = (x, z, h) => {
-    position.set(x, groundHeight(x, z) + 2.5, z);
+    const lift = flying() ? FLY_HOVER : 2.5;
+    position.set(x, groundHeight(x, z) + lift, z);
     velocity.set(0, 0);
-    state.vy = 0;
+    state.vy = flying() ? 0 : 0;
     state.heading = h;
-    state.grounded = false;
+    state.grounded = !flying();
     state.sinkTimer = 0;
+    state.airspeed = 0;
+    state.stunt = null;
     car.root.visible = true;
   };
 
@@ -218,6 +342,135 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     }
   };
 
+  const startStunt = (name) => {
+    state.stunt = name;
+    state.stuntTime = 0;
+  };
+
+  const updateFlight = (dt, input) => {
+    const throttle = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
+    const pitchInput = (input.jump ? 1 : 0) - (input.down ? 1 : 0);
+    const steerTarget = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+    state.steer = damp(state.steer, steerTarget, 8, dt);
+
+    if (state.prevThrottle > 0.5 && throttle < -0.5 && !state.stunt) startStunt("brake");
+    const wantDash = input.boost && input.forward;
+    if (wantDash && !state.boostLatch && !state.stunt) startStunt("dash");
+    const wantTrick = input.somersault || input.loop;
+    if (wantTrick && !state.stuntLatch && !state.stunt && throttle > 0) startStunt(input.somersault ? "somersault" : "loop");
+    state.boostLatch = input.boost;
+    state.stuntLatch = wantTrick;
+    state.prevThrottle = throttle;
+
+    let posePitch = 0;
+    let poseRoll = state.steer * 0.38;
+    let move = 0;
+
+    if (state.stunt) {
+      state.stuntTime += dt;
+      const t = state.stuntTime;
+      if (state.stunt === "dash") {
+        move = 36;
+        poseRoll = (t / 0.62) * Math.PI * 2;
+        posePitch = -0.08;
+        playDragapult("boost");
+        if (t >= 0.62) state.stunt = null;
+      } else if (state.stunt === "loop") {
+        const u = Math.min(1, t / 1.15);
+        const a = u * Math.PI * 2;
+        move = 20;
+        posePitch = -a;
+        position.y += Math.cos(a) * 26 * dt;
+        playDragapult("boost");
+        if (t >= 1.15) state.stunt = null;
+      } else if (state.stunt === "somersault") {
+        const u = Math.min(1, t / 1.05);
+        const a = u * Math.PI * 2;
+        move = 18;
+        posePitch = a;
+        poseRoll = a * 1.4;
+        position.y -= 14 * dt;
+        playDragapult("roar");
+        if (t >= 1.05) state.stunt = null;
+      } else if (state.stunt === "uturn") {
+        const u = Math.min(1, t / 0.95);
+        posePitch = -u * Math.PI;
+        poseRoll = Math.sin(u * Math.PI) * 0.8;
+        move = 16;
+        position.y += Math.sin(u * Math.PI) * 18 * dt;
+        if (t >= 0.95) {
+          state.heading += Math.PI;
+          state.stunt = null;
+          posePitch = 0;
+        }
+        playDragapult("boost");
+      } else if (state.stunt === "brake") {
+        move = 0;
+        state.airspeed = 0;
+        posePitch = 0.22;
+        playDragapult("fly");
+        if (t >= 0.28) state.stunt = null;
+      }
+    } else {
+      const cruise = input.boost ? 28 : 18;
+      const reverse = 10;
+      if (throttle > 0) state.airspeed = damp(state.airspeed, cruise, 3.2, dt);
+      else if (throttle < 0) state.airspeed = damp(state.airspeed, -reverse, 4, dt);
+      else state.airspeed = damp(state.airspeed, 0, 5.5, dt);
+      move = state.airspeed;
+      const pitchTarget = THREE.MathUtils.clamp(-pitchInput * 0.48, -0.5, 0.5);
+      posePitch = damp(state.flightPitch, pitchTarget, 7, dt);
+      playDragapult(input.boost ? "boost" : "fly");
+    }
+
+    if (!state.stunt) state.heading += state.steer * 1.85 * dt;
+
+    const signedSpeed = state.stunt ? move : state.airspeed;
+    const nextX = position.x + Math.sin(state.heading) * signedSpeed * dt;
+    const nextZ = position.z + Math.cos(state.heading) * signedSpeed * dt;
+    const limit = Math.hypot(nextX, nextZ);
+    if (limit > WORLD_LIMIT && state.stunt !== "uturn") {
+      startStunt("uturn");
+      position.x *= WORLD_LIMIT / Math.max(limit, 1e-3);
+      position.z *= WORLD_LIMIT / Math.max(limit, 1e-3);
+    } else if (limit > WORLD_LIMIT) {
+      position.x = (nextX / limit) * WORLD_LIMIT;
+      position.z = (nextZ / limit) * WORLD_LIMIT;
+    } else {
+      position.x = nextX;
+      position.z = nextZ;
+    }
+
+    if (!state.stunt || state.stunt === "dash") {
+      const climb = signedSpeed * Math.sin(-posePitch);
+      position.y += climb * dt;
+    }
+
+    const floor = groundHeight(position.x, position.z) + FLY_CLEARANCE;
+    if (position.y < floor) position.y = floor;
+    if (position.y > FLY_CEILING) position.y = FLY_CEILING;
+
+    velocity.set(Math.sin(state.heading) * signedSpeed, Math.cos(state.heading) * signedSpeed);
+    state.airspeed = signedSpeed;
+    state.flightPitch = posePitch;
+    state.flightRoll = poseRoll;
+    state.pitch = posePitch;
+    state.roll = poseRoll;
+    state.vy = 0;
+    state.grounded = false;
+    state.inWater = false;
+    state.bodyPitch = posePitch;
+    state.bodyRoll = poseRoll;
+
+    if (position.y > floor + 2) {
+      safe.x = position.x;
+      safe.z = position.z;
+      safe.heading = state.heading;
+    }
+
+    syncVisuals(dt, input, Math.abs(signedSpeed));
+  };
+
   const update = (dt, input) => {
     state.impact = 0;
     if (state.sinkTimer > 0) {
@@ -233,6 +486,11 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
 
     if (input.reset) {
       respawn(safe.x, safe.z, safe.heading);
+    }
+
+    if (flying()) {
+      updateFlight(dt, input);
+      return;
     }
 
     forward.set(Math.sin(state.heading), Math.cos(state.heading));
@@ -411,38 +669,56 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
   };
 
   const syncVisuals = (dt, input, forwardSpeed = 0) => {
-    const sin = Math.sin(state.heading);
-    const cos = Math.cos(state.heading);
-    const sample = (lx, lz) => groundHeight(position.x + sin * lz + cos * lx, position.z + cos * lz - sin * lx);
-    let targetPitch = 0;
-    let targetRoll = 0;
-    if (state.grounded) {
-      const front = sample(0, HALF_LENGTH);
-      const back = sample(0, -HALF_LENGTH);
-      const left = sample(HALF_WIDTH, 0);
-      const right = sample(-HALF_WIDTH, 0);
-      targetPitch = Math.atan2(back - front, HALF_LENGTH * 2);
-      targetRoll = Math.atan2(left - right, HALF_WIDTH * 2);
+    if (flying()) {
+      state.pitch = damp(state.pitch, state.flightPitch, 8, dt);
+      state.roll = damp(state.roll, state.flightRoll, 8, dt);
     } else {
-      targetPitch = THREE.MathUtils.clamp(-state.vy * 0.025, -0.4, 0.4);
+      const sin = Math.sin(state.heading);
+      const cos = Math.cos(state.heading);
+      const sample = (lx, lz) => groundHeight(position.x + sin * lz + cos * lx, position.z + cos * lz - sin * lx);
+      let targetPitch = 0;
+      let targetRoll = 0;
+      if (state.grounded) {
+        const front = sample(0, HALF_LENGTH);
+        const back = sample(0, -HALF_LENGTH);
+        const left = sample(HALF_WIDTH, 0);
+        const right = sample(-HALF_WIDTH, 0);
+        targetPitch = Math.atan2(back - front, HALF_LENGTH * 2);
+        targetRoll = Math.atan2(left - right, HALF_WIDTH * 2);
+      } else {
+        targetPitch = THREE.MathUtils.clamp(-state.vy * 0.025, -0.4, 0.4);
+      }
+      state.pitch = damp(state.pitch, targetPitch, state.grounded ? 14 : 2.5, dt);
+      state.roll = damp(state.roll, targetRoll, state.grounded ? 14 : 2.5, dt);
     }
-    state.pitch = damp(state.pitch, targetPitch, state.grounded ? 14 : 2.5, dt);
-    state.roll = damp(state.roll, targetRoll, state.grounded ? 14 : 2.5, dt);
 
     const spring = -state.bodyOffset * 140 - state.bodyVelocity * 11;
     state.bodyVelocity += spring * dt;
     state.bodyOffset += state.bodyVelocity * dt;
 
     car.root.position.copy(position);
-    car.root.rotation.set(state.pitch, state.heading, state.roll, "YXZ");
+    if (flying()) car.root.rotation.set(0, state.heading, 0, "YXZ");
+    else car.root.rotation.set(state.pitch, state.heading, state.roll, "YXZ");
     car.body.position.y = state.bodyOffset * 0.6;
     car.body.rotation.set(state.bodyPitch, 0, state.bodyRoll);
 
-    for (const wheel of car.wheels) {
-      wheel.spin.rotation.x += (forwardSpeed / WHEEL_RADIUS) * dt;
-      if (wheel.front) wheel.steer.rotation.y = state.steer * 0.42;
+    if (car.body.visible) {
+      for (const wheel of car.wheels) {
+        wheel.spin.rotation.x += (forwardSpeed / WHEEL_RADIUS) * dt;
+        if (wheel.front) wheel.steer.rotation.y = state.steer * 0.42;
+      }
+      car.flag.rotation.y = Math.sin(performance.now() * 0.012) * 0.25 - Math.min(0.6, Math.abs(forwardSpeed) * 0.03);
     }
-    car.flag.rotation.y = Math.sin(performance.now() * 0.012) * 0.25 - Math.min(0.6, Math.abs(forwardSpeed) * 0.03);
+    if (dragapult) {
+      dragapult.mixer.update(dt);
+      if (dragapult.holder.visible) {
+        dragapult.holder.position.y = 0.18 + Math.sin(shared.uTime.value * 2.2) * 0.08;
+        dragapult.holder.rotation.x = state.flightPitch;
+        dragapult.holder.rotation.z = state.flightRoll;
+        const flyAction = dragapult.actions[dragapult.current];
+        if (flyAction) flyAction.setEffectiveTimeScale(1 + Math.min(0.55, Math.abs(forwardSpeed) * 0.02));
+      }
+    }
 
     const night = shared.uNight.value;
     car.lampMaterial.color.setRGB(1, 0.96, 0.82).multiplyScalar(0.7 + night * 0.8);
@@ -450,6 +726,7 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     car.tailMaterial.color.setRGB(1, 0.22, 0.22).multiplyScalar(braking ? 1.6 : 0.55 + night * 0.4);
   };
 
+  applyRide();
   syncVisuals(0, {});
 
   return {
@@ -459,10 +736,18 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     state,
     radius: CAR_RADIUS,
     get speed() {
-      return velocity.length();
+      return flying() ? Math.abs(state.airspeed) : velocity.length();
     },
     get heading() {
       return state.heading;
+    },
+    get ride() {
+      return rides[rideIndex];
+    },
+    cycleRide() {
+      if (rides.length < 2) return rides[rideIndex];
+      rideIndex = (rideIndex + 1) % rides.length;
+      return applyRide();
     },
     update,
     teleport(x, z, h) {

@@ -70,11 +70,11 @@ export function createFollowCamera(camera, domElement) {
       focus.copy(target);
       smoothedFocus.copy(target);
     },
-    update(dt, target, heading, velocity) {
+    update(dt, target, heading, velocity, options = {}) {
       lookAhead.set(velocity.x * 0.32, 0, velocity.y * 0.32);
       lookAhead.clampLength(0, 7);
       focus.copy(target).add(lookAhead);
-      focus.y += 1.2;
+      focus.y += options.soar ? 0.4 : 1.2;
       smoothedFocus.x = damp(smoothedFocus.x, focus.x, 5, dt);
       smoothedFocus.y = damp(smoothedFocus.y, focus.y, 3, dt);
       smoothedFocus.z = damp(smoothedFocus.z, focus.z, 5, dt);
@@ -82,11 +82,11 @@ export function createFollowCamera(camera, domElement) {
       let theta;
       let phi;
       let radius;
-      if (state.chase) {
-        state.chaseTheta = damp(state.chaseTheta, heading + Math.PI, 3.5, dt);
+      if (options.soar || state.chase) {
+        state.chaseTheta = damp(state.chaseTheta, heading + Math.PI, options.soar ? 4.2 : 3.5, dt);
         theta = state.chaseTheta;
-        phi = 1.2;
-        radius = 15;
+        phi = options.soar ? 1.12 : 1.2;
+        radius = options.soar ? 18 : 15;
       } else {
         state.chaseTheta = heading + Math.PI;
         state.theta = damp(state.theta, state.targetTheta, 6, dt);
