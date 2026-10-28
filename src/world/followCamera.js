@@ -38,21 +38,35 @@ export function createFollowCamera(camera, domElement) {
     if (document.pointerLockElement === domElement) document.exitPointerLock?.();
   };
 
+  // Kart: classic click-drag orbit (c2603a1 style).
+  // UFO: optional pointer-lock look when flyLook is on.
   domElement.addEventListener("pointerdown", (event) => {
-    if (event.target !== domElement) return;
-    if (state.blockLock) return;
-    if (document.pointerLockElement === domElement) {
+    if (event.button !== 0) return;
+
+    // UFO mouse-look: click again to unlock
+    if (state.flyLook && document.pointerLockElement === domElement) {
       releaseLook();
       return;
     }
+
+    // Link toasts: only block UFO pointer-lock, never kart drag
+    if (state.flyLook && state.blockLock) return;
+
+    // Dragging the orbit cancels chase lock
+    if (!state.flyLook) state.chase = false;
+
     state.dragging = true;
     state.lastX = event.clientX;
     state.lastY = event.clientY;
     domElement.setPointerCapture(event.pointerId);
-    if (state.flyLook) domElement.requestPointerLock?.();
+
+    if (state.flyLook && !state.blockLock) {
+      domElement.requestPointerLock?.();
+    }
   });
+
   domElement.addEventListener("pointermove", (event) => {
-    const locked = document.pointerLockElement === domElement;
+    const locked = state.flyLook && document.pointerLockElement === domElement;
     if (!state.dragging && !locked) return;
     const dx = locked ? event.movementX : event.clientX - state.lastX;
     const dy = locked ? event.movementY : event.clientY - state.lastY;
@@ -60,6 +74,7 @@ export function createFollowCamera(camera, domElement) {
     state.lastY = event.clientY;
     look(dx, dy);
   });
+
   const release = () => {
     state.dragging = false;
   };
@@ -80,13 +95,17 @@ export function createFollowCamera(camera, domElement) {
       state.chase = !state.chase;
     },
     setFlyLook(on) {
+      // Important: do NOT releaseLook every frame when already off —
+      // that was killing kart click-drag immediately.
+      if (state.flyLook === on) return;
       state.flyLook = on;
       if (!on) releaseLook();
     },
     setBlockLock(on) {
       if (state.blockLock === on) return;
       state.blockLock = on;
-      if (on) releaseLook();
+      // Unlock UFO look so toast links are clickable; kart drag stays free
+      if (on && state.flyLook) releaseLook();
     },
     releaseLook,
     alignTo(heading) {
@@ -126,18 +145,20 @@ export function createFollowCamera(camera, domElement) {
       let phi;
       let radius;
       if (options.soar) {
+        // UFO: free mouse orbit (pointer-lock or drag)
         state.theta = damp(state.theta, state.targetTheta, 8, dt);
         state.phi = damp(state.phi, state.targetPhi, 8, dt);
         state.radius = damp(state.radius, state.targetRadius, 6, dt);
         theta = state.theta;
         phi = state.phi;
         radius = state.radius;
-      } else if (state.chase) {
+      } else if (state.chase && !state.dragging) {
         state.chaseTheta = damp(state.chaseTheta, heading + Math.PI, 3.5, dt);
         theta = state.chaseTheta;
         phi = 1.2;
         radius = 15;
       } else {
+        // Kart default: click-drag orbit
         state.chaseTheta = heading + Math.PI;
         state.theta = damp(state.theta, state.targetTheta, 6, dt);
         state.phi = damp(state.phi, state.targetPhi, 6, dt);
