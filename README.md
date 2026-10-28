@@ -6,17 +6,6 @@ A playable 3D island portfolio. Drive around, visit checkpoints, and mess with t
 
 Live: play locally with `npm run dev`, or check the deployed Netlify build.
 
-## Screenshots
-
-![Day](screenshots/day.png)
-
-![Sunset / dusk](screenshots/sunset.png)
-
-![Night — full island](screenshots/night-island.png)
-
-![Kart](screenshots/kart.png)
-
-![UFO](screenshots/ufo.png)
 
 ## Built with AI + Bruno Simon
 
