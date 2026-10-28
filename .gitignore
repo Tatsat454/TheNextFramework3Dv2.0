@@ -7,7 +7,7 @@ dist/
 *.log
 .vite/
 
-# Unused source models (runtime assets live in public/)
+# Local leftover source dumps / unused public variants
 Mutant Walking.fbx
 island terrain 3d model.glb
 lava golem 3d model.glb

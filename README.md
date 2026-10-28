@@ -1,19 +1,58 @@
-# The Next Framework 3D
+# Hi everyone — I made a cool website!
 
-Playable Three.js island portfolio. The kart is the main vehicle.
+A playable 3D island portfolio. Drive around, visit checkpoints, and mess with the vehicles.
 
-Press `V` to try the UFO. It is a side experiment, not the default ride.
+**Kart** is the main ride. Press `V` to try the **UFO**.
 
-## Notes / still to do
+Live: play locally with `npm run dev`, or check the deployed Netlify build.
 
-- Fix Soar over Hoenn flight so it feels like ORAS (stationary hover, pitch only while moving, dash / somersault / loop / brake / map-edge U-turn).
-- Dragapult was dropped for a custom UFO. Keep the old model assets around only if we want them later.
-- Add a McLaren 720S later.
-- Finish the other two islands: Starlight Isle and Lotus Garden. They are on the map but do not have real resume content yet.
-- Market Row and Stone Circle are further along. Keep polishing stalls, links, and Sam.
+## Screenshots
+
+![Day](screenshots/day.png)
+
+![Sunset / dusk](screenshots/sunset.png)
+
+![Night — full island](screenshots/night-island.png)
+
+![Kart](screenshots/kart.png)
+
+![UFO](screenshots/ufo.png)
+
+## Built with AI + Bruno Simon
+
+Almost every asset was generated with AI help.
+
+Inspired by [Bruno Simon](https://bruno-simon.com) — and his social icons are in the project (MIT). Huge inspo for the playful island vibe. See `public/bruno/LICENSE`.
+
+---
+
+## Coming soon
+
+### Cute music player
+Play some of my favorite artists while you explore.
+
+### Zeus lightning cloud
+Drive into a storm cloud. The camera shifts — you become Zeus — and you blast the world with lightning.
+
+### Space portal
+Cross a portal into a vibey universe. Fly through it while the environment reacts to the music — almost like a 3D visualizer.
+
+### Minigames
+Small games tucked into the island.
+
+### Polish pass
+Fixing and upgrading older assets.
+
+Stay tuned.
+
+## Controls (quick)
+
+- `W` `A` `S` `D` — drive / soar
+- Mouse drag — orbit the kart camera
+- `V` — switch vehicle
+- `1`–`4` — travel to areas · `0` home
+- `C` — chase camera · `T` — skip time · `E` — talk to Sam
 
 ## Credits
 
-Social sculptures are by [Bruno Simon](https://bruno-simon.com) and used under the MIT License. See `public/bruno/LICENSE`.
-
-The UFO is a custom primitive ride. The unused Dragapult files, if still in the repo, are by [LunaEagle](https://skfb.ly/oErKR) under [CC BY](http://creativecommons.org/licenses/by/4.0/).
+Social sculptures by [Bruno Simon](https://bruno-simon.com) (MIT).
