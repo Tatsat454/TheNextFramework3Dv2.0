@@ -463,6 +463,7 @@ export function createTempleOfTribulations(area, _heightAt, colliders, assets, o
     human.spawn(0, 0, -13.2, 0); // Spawn near South Entrance facing North (+Z) toward Altar & 5 Statues!
     onStateChange?.({
       inDungeon: true,
+      indoorMode: 1,
       dungeonGroup,
       human,
     });

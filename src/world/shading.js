@@ -98,7 +98,7 @@ vec3 grassColor(vec2 xz) {
 `;
 
 const FRAGMENT_GLSL = /* glsl */ `
-vec3 indoorStylize(vec3 base, vec3 normal, vec3 wp, float shadowMask) {
+vec3 templeStylize(vec3 base, vec3 normal, vec3 wp, float shadowMask) {
   // 1. Sculptural Key Light from the Overhead Oculus + Statue/Human Shadows
   vec3 keyDir = normalize(vec3(0.28, 0.88, -0.34));
   float ndl = dot(normal, keyDir);
@@ -182,9 +182,48 @@ vec3 indoorStylize(vec3 base, vec3 normal, vec3 wp, float shadowMask) {
   return color;
 }
 
+vec3 arcadeStylize(vec3 base, vec3 normal, vec3 wp, float shadowMask) {
+  // 1. Playful Bruno-Simon Toy Lighting (Warm key light + violet shadows, 100% stable!)
+  vec3 keyDir = normalize(vec3(0.32, 0.88, -0.35));
+  float ndl = dot(normal, keyDir);
+  float directFactor = smoothstep(-0.35, 0.65, ndl);
+
+  // Warm cream lit tone on top surfaces, soft violet shadow matching #7c6cf0
+  vec3 litTone = base * vec3(1.08, 1.04, 0.98);
+  vec3 shadowTone = base * vec3(0.48, 0.42, 0.78) * mix(0.85, 1.05, normal.y * 0.5 + 0.5);
+  vec3 color = mix(shadowTone, litTone, directFactor);
+
+  // 2. Soft Central Skylight Pool (Warm Gold / Cream, not aggressive neon!)
+  float oculusDist = length(wp.xz - vec2(0.0, -2.2));
+  float oculusPool = smoothstep(9.5, 1.5, oculusDist) * (max(normal.y, 0.0) * 0.65 + 0.35);
+  color += base * vec3(0.20, 0.18, 0.10) * oculusPool;
+
+  // 3. Gentle Machine Accent Light Pools (Cyan, Gold, Coral, Purple)
+  float dM1 = length(wp.xz - vec2(-5.1, 10.2));
+  float dM2 = length(wp.xz - vec2(-1.7, 11.0));
+  float dM3 = length(wp.xz - vec2(1.7, 11.0));
+  float dM4 = length(wp.xz - vec2(5.1, 10.2));
+
+  vec3 spot1 = vec3(0.15, 0.38, 0.52) * smoothstep(4.8, 0.4, dM1) * 0.22; // Astro Blaster (Cyan)
+  vec3 spot2 = vec3(0.48, 0.38, 0.12) * smoothstep(4.8, 0.4, dM2) * 0.22; // Brick Smash (Gold)
+  vec3 spot3 = vec3(0.48, 0.18, 0.14) * smoothstep(4.8, 0.4, dM3) * 0.22; // Turbo Drift (Coral)
+  vec3 spot4 = vec3(0.26, 0.18, 0.48) * smoothstep(4.8, 0.4, dM4) * 0.22; // Pixel Hopper (Purple)
+  color += base * (spot1 + spot2 + spot3 + spot4);
+
+  // 4. Subtle Back Marquee Glow
+  float dMarquee = length(wp - vec3(0.0, 8.0, 15.4));
+  float marqueeWash = smoothstep(16.0, 2.0, dMarquee) * max(-normal.z, 0.0) * 0.20;
+  color += base * vec3(0.38, 0.18, 0.28) * marqueeWash;
+
+  return color;
+}
+
 vec3 stylize(vec3 base, vec3 normal, vec3 worldPosition, float extraShadow, float shadowMask) {
+  if (uIndoor > 1.5) {
+    return arcadeStylize(base, normal, worldPosition, shadowMask);
+  }
   if (uIndoor > 0.5) {
-    return indoorStylize(base, normal, worldPosition, shadowMask);
+    return templeStylize(base, normal, worldPosition, shadowMask);
   }
   float ndl = dot(normal, uSunDirection);
   float core = smoothstep(0.62, -0.2, ndl);
@@ -197,6 +236,9 @@ vec3 stylize(vec3 base, vec3 normal, vec3 worldPosition, float extraShadow, floa
 }
 
 vec3 applyAtmosphere(vec3 color, vec3 worldPosition) {
+  if (uIndoor > 0.5) {
+    return color; // Indoor dungeons never receive outdoor sky fog or reveal edge discard!
+  }
   float revealDistance = distance(worldPosition.xz, uRevealCenter);
   if (revealDistance > uRevealRadius) discard;
   float fog = smoothstep(uFogNear, uFogFar, distance(cameraPosition, worldPosition));

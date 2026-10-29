@@ -6,6 +6,7 @@ import { createGlows } from "./props.js";
 import { createSocialLogos, loadSocialTemplate } from "./socials.js";
 import { createStoneGolem, loadGolemTemplate } from "./golem.js";
 import { createTempleOfTribulations, loadTempleTemplate } from "./temple.js";
+import { createMarketArcade, loadArcadeTemplate } from "./arcade.js";
 import { createEmissiveMaterial, createSolidMaterial, createStylizedMaterial, flatten, shared } from "./shading.js";
 
 let cachedLotusGarden = null;
@@ -530,61 +531,24 @@ function stockStall(group, theme, materials, bobbers, phase) {
   bobbers.push({ mesh: coin, baseY: 1.82, phase, amount: 0.06 });
 }
 
-function createMarketDecor(area, heightAt, colliders) {
+function createMarketDecor(area, heightAt, colliders, _particles, assets) {
   const group = new THREE.Group();
-  const canvas = ["#ff5b7a", "#ffd23f", "#3ec6ff", "#62d26a", "#ff9f43", "#8b6cff"];
-  const solids = {};
-  const glows = {};
-  const materials = {
-    wood: createSolidMaterial("#8b5a32"),
-    pale: createSolidMaterial("#d7a36a"),
-    dark: createSolidMaterial("#4d3424"),
-    solid(color) {
-      return (solids[color] ??= createSolidMaterial(color));
-    },
-    glow(color) {
-      return (glows[color] ??= createEmissiveMaterial(color));
-    },
-  };
-  const bobbers = [];
-  const lanterns = [];
-  const glowPoints = [];
-  const stalls = [];
-  const entranceAngle = Math.atan2(-area.direction.z, -area.direction.x);
-  let themeIndex = 0;
-  for (let i = 0; i < 6; i++) {
-    const angle = entranceAngle + ((i + 0.5) / 6) * TAU;
-    if (angleDistance(angle, entranceAngle) < 0.55) continue;
-    const x = area.x + Math.cos(angle) * (area.radius - 4.6);
-    const z = area.z + Math.sin(angle) * (area.radius - 4.6);
-    const theme = STALL_THEMES[themeIndex % STALL_THEMES.length];
-    const stall = createStall(theme, materials, bobbers, lanterns, i * 1.3);
-    stall.position.set(x, area.y, z);
-    stall.rotation.y = Math.atan2(area.x - x, area.z - z);
-    group.add(stall);
-    glowPoints.push(new THREE.Vector3(x, area.y + 3.1, z));
-    colliders.push({ x, z, radius: 2.05 });
-    stalls.push({
-      name: theme.name,
-      bio: theme.bio,
-      url: theme.url,
-      color: theme.color,
-      x,
-      y: area.y + 1.2,
-      z,
-      near: false,
-      fired: false,
-    });
-    themeIndex += 1;
-  }
+  let pendingTransition = null;
+  const arcade = createMarketArcade(area, heightAt, colliders, assets.arcade, (stateEvent) => {
+    pendingTransition = stateEvent;
+  });
+  group.add(arcade.group);
 
+  const canvas = ["#ff5b7a", "#ffd23f", "#3ec6ff", "#62d26a", "#ff9f43", "#8b6cff"];
   const flagParts = [];
   const flags = [];
   const flagGeometry = new THREE.BufferGeometry();
   flagGeometry.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 0, -0.7, 0, 1.2, -0.35, 0], 3));
   flagGeometry.computeVertexNormals();
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * TAU;
+  const entranceAngle = Math.atan2(-area.direction.z, -area.direction.x);
+  for (let i = 0; i < 10; i++) {
+    const angle = (i / 10) * TAU;
+    if (angleDistance(angle, entranceAngle) < 0.35) continue;
     const x = area.x + Math.cos(angle) * (area.radius + 1.3);
     const z = area.z + Math.sin(angle) * (area.radius + 1.3);
     const y = heightAt(x, z);
@@ -597,51 +561,27 @@ function createMarketDecor(area, heightAt, colliders) {
     colliders.push({ x, z, radius: 0.25 });
   }
   group.add(mergedMesh(flagParts, createSolidMaterial("#3d3a55")));
-  if (glowPoints.length) group.add(createGlows(glowPoints, { color: "#ffd27a", size: 420, day: 0.22 }));
-
-  let opened = null;
-  let prompt = null;
-  const openLink = (url) => Boolean(window.open(url, "_blank", "noopener,noreferrer"));
 
   return {
     group,
-    takeOpened() {
-      const value = opened;
-      opened = null;
-      return value;
+    dungeonGroup: arcade.dungeonGroup,
+    isInsideDungeon: () => arcade.isInsideDungeon(),
+    updateDungeonPlayer: (dt, input, cameraHeading) => arcade.updateDungeonPlayer(dt, input, cameraHeading),
+    takeOpened: () => arcade.takeOpened(),
+    openPrompt: () => arcade.openPrompt(),
+    socialState: () => arcade.socialState(),
+    talk: () => arcade.talk(),
+    talkState: () => arcade.talkState(),
+    exitHall: () => arcade.exitHall(),
+    getCameraOverride: () => arcade.getCameraOverride?.(),
+    takeTeleport() {
+      const val = pendingTransition;
+      pendingTransition = null;
+      return val;
     },
-    socialState() {
-      return prompt;
-    },
-    openPrompt() {
-      const stall = stalls.find((item) => item.near && !item.fired);
-      if (!stall) return false;
-      stall.fired = true;
-      prompt = null;
-      opened = { ...stall, blocked: !openLink(stall.url) };
-      return true;
-    },
-    update(time, _dt, _near, car) {
+    update(time, dt, _near, car, camera) {
       for (const { flag, phase } of flags) flag.rotation.y = Math.sin(time * 2.4 + phase) * 0.45 + phase;
-      for (const item of bobbers) item.mesh.position.y = item.baseY + Math.sin(time * 2.1 + item.phase) * (item.amount ?? 0.04);
-      for (const item of lanterns) item.mesh.rotation.z = Math.sin(time * 1.8 + item.phase) * 0.12;
-      if (!car) return;
-      let nearest = null;
-      let nearestDistance = 4.6;
-      for (const stall of stalls) {
-        const distance = Math.hypot(car.x - stall.x, (car.y ?? stall.y) - stall.y, car.z - stall.z);
-        if (distance < nearestDistance) {
-          nearest = stall;
-          nearestDistance = distance;
-        }
-      }
-      for (const stall of stalls) {
-        stall.near = stall === nearest;
-        if (stall !== nearest) stall.fired = false;
-      }
-      prompt = nearest && !nearest.fired
-        ? { name: nearest.name, bio: nearest.bio, color: nearest.color, url: nearest.url }
-        : null;
+      arcade.update(time, dt, car, camera);
     },
   };
 }
@@ -917,13 +857,14 @@ export async function createAreas({ terrain, colliders, particles, camera }) {
   const dungeonGroup = new THREE.Group();
   const surfaces = [];
   const { features, heightAt } = terrain;
-  const [golem, socials, temple, lotusGarden] = await Promise.all([
+  const [golem, socials, temple, lotusGarden, arcade] = await Promise.all([
     loadGolemTemplate(),
     loadSocialTemplate(),
     loadTempleTemplate(),
     loadLotusGardenTemplate(),
+    loadArcadeTemplate(),
   ]);
-  const assets = { golem, socials, temple, lotusGarden };
+  const assets = { golem, socials, temple, lotusGarden, arcade };
   const decorBuilders = {
     stones: createStonesDecor,
     isle: createIsleDecor,
@@ -1003,6 +944,13 @@ export async function createAreas({ terrain, colliders, particles, camera }) {
       for (const { decor } of built) {
         decor?.exitHall?.();
       }
+    },
+    getCameraOverride() {
+      for (const { decor } of built) {
+        const cam = decor?.getCameraOverride?.();
+        if (cam) return cam;
+      }
+      return null;
     },
     update(dt, time, carPosition) {
       let current = null;

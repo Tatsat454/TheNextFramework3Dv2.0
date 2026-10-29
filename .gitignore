@@ -8,6 +8,9 @@ dist/
 .vite/
 
 # Local leftover source dumps / unused public variants
+__pycache__/
+*.pyc
+.cursor/
 Mutant Walking.fbx
 island terrain 3d model.glb
 lava golem 3d model.glb

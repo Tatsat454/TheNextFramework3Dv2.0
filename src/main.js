@@ -269,12 +269,12 @@ const runDungeonTransition = (transition) => {
   }
   if (hud.dungeonLoaderTitle) {
     hud.dungeonLoaderTitle.textContent = transition.inDungeon
-      ? "Temple of Tribulations"
+      ? (transition.title || "Temple of Tribulations")
       : "Returning to Island";
   }
   if (hud.dungeonLoaderSub) {
     hud.dungeonLoaderSub.textContent = transition.inDungeon
-      ? "Summoning Research Sanctuary & Human Form…"
+      ? (transition.subtitle || "Summoning Research Sanctuary & Human Form…")
       : "Restoring Island World & Vehicle…";
   }
   if (hud.dungeonLoaderBar) hud.dungeonLoaderBar.style.width = "12%";
@@ -298,19 +298,22 @@ const runDungeonTransition = (transition) => {
 };
 
 const applyWorldSwitch = (transition) => {
-  shared.uIndoor.value = transition.inDungeon ? 1 : 0;
+  shared.uIndoor.value = transition.inDungeon ? (transition.indoorMode ?? 1) : 0;
   if (transition.inDungeon) {
     islandRoot.visible = false;
     transition.dungeonGroup.visible = true;
     activeHuman = transition.human;
     hud.exitDungeon?.classList.add("is-visible");
     follow.setFlyLook(false);
-    follow.snap(activeHuman.position);
     follow.alignTo(activeHuman.heading);
-    hud.toastEyebrow.textContent = "Sanctuary Dungeon · Human Form";
-    hud.toastName.textContent = "Temple of Tribulations";
-    hud.toastName.style.color = "#ffd23f";
-    hud.toastTagline.textContent = "Walk with WASD, Space to jump, R to sprint. Approach any of the 5 statues and press E or Click!";
+    follow.snap(activeHuman.position);
+    follow.update(0, activeHuman.position, activeHuman.heading, activeHuman.velocity, { indoor: true });
+    hud.toastEyebrow.textContent = transition.toastEyebrow || "Sanctuary Dungeon · Human Form";
+    hud.toastName.textContent = transition.title || "Temple of Tribulations";
+    hud.toastName.style.color = transition.toastColor || "#ffd23f";
+    hud.toastTagline.textContent =
+      transition.toastTagline ||
+      "Walk with WASD, Space to jump, R to sprint. Approach any of the 5 statues and press E or Click!";
     hud.toast.classList.add("is-visible");
     hud.toast.classList.remove("is-link", "has-progress", "is-story");
     delete hud.toast.dataset.url;
@@ -477,6 +480,7 @@ function tick(now) {
   follow.update(dt, activeTarget.position, activeTarget.heading, activeTarget.velocity, {
     soar: !inDungeon && vehicle.ride?.id === "ufo",
     indoor: inDungeon,
+    override: inDungeon ? areas.getCameraOverride?.() : null,
   });
   sky.mesh.position.copy(camera.position);
 

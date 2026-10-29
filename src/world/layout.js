@@ -25,12 +25,12 @@ export const AREAS = [
   {
     id: "market",
     name: "Market Row",
-    tagline: "Four projects. Drive up and click the box.",
-    x: 104,
-    z: -30,
-    radius: 16,
+    tagline: "Press E or click the prompt box to enter the Console Arcade",
+    x: 112,
+    z: -32,
+    radius: 26,
     color: "#ff6b9d",
-    land: { from: { x: 58, z: -8 }, width: 32 },
+    land: { from: { x: 56, z: -10 }, width: 56, strength: 0.92 },
     road: { from: "spawn", wobble: 2 },
   },
   {
