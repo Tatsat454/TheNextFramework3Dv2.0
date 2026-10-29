@@ -21,9 +21,89 @@
     </section>
 
     <div id="hud">
-      <button class="chip time" id="time" type="button" title="Skip time (T)">Day</button>
-      <canvas class="minimap" id="minimap"></canvas>
-      <div class="chip destinations" id="destinations"></div>
+      <div class="hud-top">
+        <div class="chip menu" id="menu">
+          <button class="menu-toggle" id="menu-toggle" type="button" aria-expanded="false" aria-controls="menu-panel" title="Menu">
+            <span class="menu-bars" aria-hidden="true"></span>
+            <span class="menu-toggle-label">Menu</span>
+          </button>
+
+          <div class="menu-panel" id="menu-panel" hidden>
+            <div class="menu-head">
+              <p class="menu-title">Island Menu</p>
+            </div>
+            <div class="menu-music-bar">
+              <p class="menu-now-playing" id="menu-now-playing">Music ready</p>
+              <div class="menu-music-actions">
+                <button class="menu-music" id="menu-music-pause" type="button" title="Pause or play" aria-label="Pause or play">⏸</button>
+                <button class="menu-music" id="menu-music-off" type="button" title="Turn music off" aria-label="Turn music off">⏹</button>
+                <button class="menu-music" id="menu-music-restart" type="button" title="Restart playlist" aria-label="Restart playlist">↻</button>
+                <button class="menu-music" id="menu-music-next" type="button" title="Next track" aria-label="Next track">⏭</button>
+              </div>
+            </div>
+
+            <div class="menu-tabs" role="tablist" aria-label="Menu pages">
+              <button class="menu-tab is-active" type="button" role="tab" aria-selected="true" data-page="controls">Controls</button>
+              <button class="menu-tab" type="button" role="tab" aria-selected="false" data-page="guide">How to Play</button>
+            </div>
+
+            <div class="menu-page is-active" data-page="controls">
+              <div class="menu-subtabs" role="tablist" aria-label="Control modes">
+                <button class="menu-subtab is-active" type="button" data-mode="land">Land</button>
+                <button class="menu-subtab" type="button" data-mode="air">Air</button>
+              </div>
+
+              <div class="menu-mode is-active" data-mode="land">
+                <p class="menu-section-title">Land Controls</p>
+                <ul class="menu-list">
+                  <li><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><em>Drive</em></li>
+                  <li><span><kbd>Shift</kbd></span><em>Boost (Kart / F1)</em></li>
+                  <li><span><kbd>R</kbd></span><em>Respawn (Kart / F1)</em></li>
+                  <li><span><kbd>Space</kbd></span><em>Jump</em></li>
+                  <li><span><kbd>V</kbd></span><em>Cycle Kart · F1 · UFO</em></li>
+                  <li><span><kbd>L</kbd></span><em>F1 rain light</em></li>
+                  <li><span><kbd>C</kbd></span><em>Camera mode</em></li>
+                  <li><span><kbd>T</kbd></span><em>Skip day / night</em></li>
+                </ul>
+              </div>
+
+              <div class="menu-mode" data-mode="air">
+                <p class="menu-section-title">Air Controls</p>
+                <ul class="menu-list">
+                  <li><span>Mouse</span><em>Look / steer camera</em></li>
+                  <li><span><kbd>W</kbd></span><em>Fly camera-forward</em></li>
+                  <li><span><kbd>S</kbd></span><em>Descend</em></li>
+                  <li><span><kbd>A</kbd><kbd>D</kbd></span><em>Yaw left / right</em></li>
+                  <li><span><kbd>Space</kbd></span><em>Pitch up</em></li>
+                  <li><span><kbd>Ctrl</kbd></span><em>Pitch down</em></li>
+                  <li><span><kbd>Shift</kbd></span><em>Sonic boom</em></li>
+                  <li><span><kbd>Q</kbd></span><em>Somersault</em></li>
+                  <li><span><kbd>F</kbd></span><em>Loop</em></li>
+                  <li><span><kbd>L</kbd></span><em>UFO light beam</em></li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="menu-page" data-page="guide">
+              <p class="menu-section-title">How to Play</p>
+              <ul class="menu-list menu-list-guide">
+                <li><span>Explore</span><em>Drive the island and visit the colored landmarks on the minimap.</em></li>
+                <li><span><kbd>E</kbd> / Click</span><em>Talk, open links, or enter a hall when a prompt appears.</em></li>
+                <li><span>Halls</span><em>Walk with WASD. Shift sprints. Space jumps.</em></li>
+                <li><span><kbd>Esc</kbd></span><em>Leave a sanctuary or arcade and return to the island.</em></li>
+                <li><span>Toasts</span><em>Click story / link boxes when they light up to open projects.</em></li>
+                <li><span>Vehicles</span><em>Press V anytime outdoors to hop Kart → F1 → UFO.</em></li>
+                <li><span>Music</span><em>Toggle the island score from this menu anytime.</em></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <button class="chip time" id="time" type="button" title="Skip time (T)">Day</button>
+      </div>
+
+      <canvas class="minimap" id="minimap" width="176" height="176" aria-label="Island minimap"></canvas>
+
       <div class="toast" id="toast">
         <span class="toast-leave" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
@@ -38,37 +118,19 @@
         <p class="toast-tagline" id="toast-tagline"></p>
         <div class="toast-progress" id="toast-progress"><i id="toast-progress-fill"></i></div>
       </div>
+
       <div class="chip speed"><span id="speed">0</span><small>km/h</small></div>
-      <div class="chip controls" id="controls">
-        <button class="controls-toggle" id="controls-toggle" type="button" aria-expanded="false" aria-controls="controls-panel" title="Controls">
-          <span class="controls-bars" aria-hidden="true"></span>
-        </button>
-        <div class="controls-panel" id="controls-panel">
-          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive / soar</span>
-          <span>mouse look in air</span>
-          <span><kbd>S</kbd> down in air</span>
-          <span><kbd>R</kbd> boost / dash</span>
-          <span><kbd>Space</kbd> jump / pitch up</span>
-          <span><kbd>Ctrl</kbd> pitch down</span>
-          <span><kbd>Q</kbd> somersault</span>
-          <span><kbd>F</kbd> loop</span>
-          <span><kbd>Shift</kbd> sonic boom / reset</span>
-          <span><kbd>L</kbd> UFO light</span>
-          <span><kbd>C</kbd> camera</span>
-          <span><kbd>T</kbd> time</span>
-          <span><kbd>1</kbd>-<kbd>4</kbd> travel</span>
-          <span><kbd>0</kbd> home</span>
-          <span><kbd>E</kbd> talk</span>
-          <span><kbd>V</kbd> vehicle</span>
-          <span>click the box to open</span>
-        </div>
-      </div>
+
       <div class="dialogue" id="dialogue">
         <p class="dialogue-name" id="dialogue-name">Sam</p>
         <p class="dialogue-line" id="dialogue-line"></p>
         <p class="dialogue-hint" id="dialogue-hint">E to talk</p>
       </div>
-      <button class="chip exit-dungeon" id="exit-dungeon" type="button" hidden>← Exit Sanctuary (Esc)</button>
+
+      <button class="chip exit-dungeon" id="exit-dungeon" type="button" hidden aria-label="Press Escape to leave">
+        <kbd>Esc</kbd>
+        <span>Leave</span>
+      </button>
     </div>
 
     <div class="dungeon-loader" id="dungeon-loader" aria-hidden="true">

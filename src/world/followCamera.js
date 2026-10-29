@@ -29,7 +29,8 @@ export function createFollowCamera(camera, domElement) {
 
   const look = (dx, dy) => {
     state.targetTheta -= dx * 0.006;
-    state.targetPhi = THREE.MathUtils.clamp(state.targetPhi - dy * 0.004, 0.35, 1.32);
+    // Allow looking further up indoors/outdoors (was capped too low for dungeon ceilings)
+    state.targetPhi = THREE.MathUtils.clamp(state.targetPhi - dy * 0.0045, 0.28, 1.52);
     state.idle = 0;
   };
 
@@ -114,6 +115,19 @@ export function createFollowCamera(camera, domElement) {
       state.theta = theta;
       state.chaseTheta = theta;
     },
+    enterIndoor() {
+      // Start over-the-shoulder close; walking will ease the camera out.
+      state.targetRadius = 18;
+      state.radius = 4.1;
+      state.targetPhi = 1.08;
+      state.phi = 1.08;
+    },
+    exitIndoor() {
+      state.targetRadius = 26;
+      state.radius = 26;
+      state.targetPhi = 0.96;
+      state.phi = 0.96;
+    },
     nudgeYaw(delta) {
       state.targetTheta += delta;
       state.theta += delta;
@@ -148,9 +162,15 @@ export function createFollowCamera(camera, domElement) {
       let radius;
       if (options.indoor) {
         state.theta = damp(state.theta, state.targetTheta, 10, dt);
-        state.phi = damp(state.phi, THREE.MathUtils.clamp(state.targetPhi, 0.95, 1.35), 10, dt);
-        const indoorTargetRadius = THREE.MathUtils.clamp(state.targetRadius * 0.22, 3.8, 6.2);
-        state.radius = damp(state.radius, indoorTargetRadius, 10, dt);
+        // Free vertical look — previous 0.95–1.35 clamp locked the camera height
+        state.phi = damp(state.phi, THREE.MathUtils.clamp(state.targetPhi, 0.42, 1.5), 10, dt);
+        const speed = Math.hypot(velocity.x, velocity.y);
+        const walkOut = THREE.MathUtils.smoothstep(speed, 0.35, 5.2);
+        // Idle/enter: close (~4). Walking: pull out (~11). Wheel still nudges within range.
+        const wheelT = THREE.MathUtils.clamp((state.targetRadius - 12) / 58, 0, 1);
+        const speedRadius = THREE.MathUtils.lerp(4.0, 11.2, walkOut);
+        const indoorTargetRadius = THREE.MathUtils.clamp(speedRadius + (wheelT - 0.35) * 5.5, 3.6, 13.5);
+        state.radius = damp(state.radius, indoorTargetRadius, 5.5, dt);
         theta = state.theta;
         phi = state.phi;
         radius = state.radius;
@@ -192,9 +212,9 @@ export function createFollowCamera(camera, domElement) {
       offset.setFromSphericalCoords(radius, phi, theta);
       camera.position.copy(smoothedFocus).add(offset);
       if (options.indoor) {
-        camera.position.x = THREE.MathUtils.clamp(camera.position.x, -11.5, 11.5);
-        camera.position.z = THREE.MathUtils.clamp(camera.position.z, -13.5, 13.5);
-        camera.position.y = THREE.MathUtils.clamp(camera.position.y, 1.4, 9.8);
+        camera.position.x = THREE.MathUtils.clamp(camera.position.x, -12.8, 12.8);
+        camera.position.z = THREE.MathUtils.clamp(camera.position.z, -14.6, 14.6);
+        camera.position.y = THREE.MathUtils.clamp(camera.position.y, 1.15, 12.5);
       }
 
       state.shake = damp(state.shake, 0, 5, dt);

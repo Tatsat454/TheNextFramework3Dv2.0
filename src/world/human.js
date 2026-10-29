@@ -32,12 +32,14 @@ export function createHumanExplorer() {
   torso.position.y = 1.12;
   body.add(torso);
 
+  // Blue tunic base. Overlay plates sit clearly in front / outside so gold vs blue
+  // never share a depth plane (neck collar flicker confirmed by coplanarSiblingPairs logs).
   torso.add(part(new RoundedBoxGeometry(0.54, 0.64, 0.32, 2, 0.06), tunicMat, 0, 0, 0));
-  torso.add(part(new RoundedBoxGeometry(0.24, 0.60, 0.34, 1, 0.03), creamMat, 0, 0.02, 0.01));
-  // Gold belt & collar trim
-  torso.add(part(new RoundedBoxGeometry(0.57, 0.09, 0.35, 1, 0.02), goldMat, 0, -0.22, 0));
-  torso.add(part(new RoundedBoxGeometry(0.14, 0.12, 0.37, 1, 0.02), goldMat, 0, -0.22, 0.01));
-  torso.add(part(new RoundedBoxGeometry(0.42, 0.08, 0.34, 1, 0.02), goldMat, 0, 0.28, 0));
+  torso.add(part(new RoundedBoxGeometry(0.24, 0.58, 0.06, 1, 0.03), creamMat, 0, 0.02, 0.19));
+  // Gold belt & collar trim — thicker + offset so they wrap outside the tunic shell
+  torso.add(part(new RoundedBoxGeometry(0.58, 0.09, 0.38, 1, 0.02), goldMat, 0, -0.22, 0));
+  torso.add(part(new RoundedBoxGeometry(0.14, 0.12, 0.08, 1, 0.02), goldMat, 0, -0.22, 0.2));
+  torso.add(part(new RoundedBoxGeometry(0.44, 0.07, 0.38, 1, 0.02), goldMat, 0, 0.31, 0.02));
 
   // Explorer Backpack / Research Satchel on back (-Z is back when facing +Z)
   torso.add(part(new RoundedBoxGeometry(0.40, 0.44, 0.20, 2, 0.05), packMat, 0, 0.04, -0.24));
@@ -100,22 +102,27 @@ export function createHumanExplorer() {
 
   const RADIUS = 0.55;
   const GRAVITY = 26;
+  // Boots are modeled with their soles at local y≈0 — keep a clear gap above the floor
+  // so idle/walk bob never z-fights the carpet (confirmed by floorGap logs).
+  const FOOT_CLEARANCE = 0.05;
 
   const spawn = (x, y, z, heading = 0) => {
-    position.set(x, y, z);
+    position.set(x, y + FOOT_CLEARANCE, z);
     velocity.set(0, 0);
     state.heading = heading;
     state.vy = 0;
     state.grounded = true;
+    body.position.y = 0;
     root.position.copy(position);
     root.rotation.set(0, heading, 0);
   };
 
-  const update = (dt, input, cameraHeading, surfaceAt, colliders) => {
+  const update = (dt, input, cameraHeading, surfaceAt, colliders, bounds) => {
     const moveForward = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
     const moveRight = (input.right ? 1 : 0) - (input.left ? 1 : 0);
     const isMoving = moveForward !== 0 || moveRight !== 0;
     const maxSpeed = input.boost ? 11.5 : 7.6;
+    const hall = bounds ?? { minX: -13.6, maxX: 13.6, minZ: -16.6, maxZ: 16.4 };
 
     if (isMoving) {
       // Camera-relative movement direction
@@ -152,28 +159,33 @@ export function createHumanExplorer() {
       }
     }
 
-    // Clamp inside the Sanctuary Hall bounds
-    nextX = THREE.MathUtils.clamp(nextX, -13.6, 13.6);
-    nextZ = THREE.MathUtils.clamp(nextZ, -16.6, 16.4);
+    // Clamp inside the current hall shell (temple default, arcade overrides)
+    nextX = THREE.MathUtils.clamp(nextX, hall.minX, hall.maxX);
+    nextZ = THREE.MathUtils.clamp(nextZ, hall.minZ, hall.maxZ);
 
     position.x = nextX;
     position.z = nextZ;
 
     const floorY = surfaceAt(position.x, position.z);
+    const standY = floorY + FOOT_CLEARANCE;
     if (state.grounded) {
       if (input.jump && !state.jumpLatch) {
         state.vy = 9.2;
         state.grounded = false;
         position.y += 0.05;
+      } else if (standY > position.y) {
+        // Snap up onto raised floors/stages so damp lag can't bury boots in geometry.
+        position.y = standY;
+        state.vy = 0;
       } else {
-        position.y = damp(position.y, floorY, 18, dt);
+        position.y = damp(position.y, standY, 18, dt);
         state.vy = 0;
       }
     } else {
       state.vy -= GRAVITY * dt;
       position.y += state.vy * dt;
-      if (position.y <= floorY) {
-        position.y = floorY;
+      if (position.y <= standY) {
+        position.y = standY;
         state.vy = 0;
         state.grounded = true;
       }
@@ -202,7 +214,8 @@ export function createHumanExplorer() {
       rightLeg.rotation.x = damp(rightLeg.rotation.x, 0, 12, dt);
       leftArm.rotation.x = damp(leftArm.rotation.x, 0, 12, dt);
       rightArm.rotation.x = damp(rightArm.rotation.x, 0, 12, dt);
-      body.position.y = Math.sin(state.walkPhase) * 0.02;
+      // Positive-only idle bob — negative sin previously drove boots under the floor.
+      body.position.y = Math.abs(Math.sin(state.walkPhase)) * 0.02;
       torso.rotation.x = damp(torso.rotation.x, 0, 10, dt);
     }
 

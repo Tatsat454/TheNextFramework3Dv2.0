@@ -95,7 +95,12 @@ function createPad(area) {
   const geometry = new THREE.CircleGeometry(area.radius, 96);
   geometry.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(area.x, area.y + 0.035, area.z);
+  // Sit clearly above terrain so tile colors don't z-fight / flicker while driving.
+  material.polygonOffset = true;
+  material.polygonOffsetFactor = -2;
+  material.polygonOffsetUnits = -2;
+  mesh.position.set(area.x, area.y + 0.14, area.z);
+  mesh.renderOrder = 1;
   mesh.receiveShadow = true;
   return mesh;
 }
@@ -266,7 +271,7 @@ const STALL_THEMES = [
     id: "robots",
     name: "Flo the Robot",
     bio: "I designed and 3D-printed Flo, a home robot that picks up clothes and carries them to a basket. The result is a low-cost helper for family members who can't bend down easily, and it goes back to charge itself.",
-    url: "https://github.com/Tatsat454/FLO-Mini-v0.3",
+    url: "https://github.com/Tatsat454/FloTheRobot",
     color: "#14e4ff",
     cloth: "#14e4ff",
     stripe: "#141a28",

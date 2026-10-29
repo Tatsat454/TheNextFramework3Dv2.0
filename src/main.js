@@ -15,6 +15,7 @@ import { createFollowCamera } from "./world/followCamera.js";
 import { createCycles } from "./world/cycles.js";
 import { createAreas } from "./world/areas.js";
 import { createMinimap } from "./world/minimap.js";
+import { createMusicEngine } from "./world/music.js";
 
 const canvas = document.querySelector("#view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -130,7 +131,6 @@ const keyMap = {
   ArrowLeft: "left",
   KeyD: "right",
   ArrowRight: "right",
-  KeyR: "boost",
   Space: "jump",
   ControlLeft: "down",
   ControlRight: "down",
@@ -154,8 +154,14 @@ const hud = {
   dialogueName: document.querySelector("#dialogue-name"),
   dialogueLine: document.querySelector("#dialogue-line"),
   dialogueHint: document.querySelector("#dialogue-hint"),
-  controls: document.querySelector("#controls"),
-  controlsToggle: document.querySelector("#controls-toggle"),
+  menu: document.querySelector("#menu"),
+  menuToggle: document.querySelector("#menu-toggle"),
+  menuPanel: document.querySelector("#menu-panel"),
+  menuMusicPause: document.querySelector("#menu-music-pause"),
+  menuMusicOff: document.querySelector("#menu-music-off"),
+  menuMusicRestart: document.querySelector("#menu-music-restart"),
+  menuMusicNext: document.querySelector("#menu-music-next"),
+  menuNowPlaying: document.querySelector("#menu-now-playing"),
   exitDungeon: document.querySelector("#exit-dungeon"),
   dungeonLoader: document.querySelector("#dungeon-loader"),
   dungeonLoaderBar: document.querySelector("#dungeon-loader-bar"),
@@ -165,14 +171,8 @@ const hud = {
 
 let activeHuman = null;
 
+const music = createMusicEngine();
 const minimap = createMinimap({ canvas: document.querySelector("#minimap"), terrain, areas: areas.areas });
-const destinationList = document.querySelector("#destinations");
-destinationList.innerHTML = areas.areas
-  .map(
-    (area, index) =>
-      `<span data-id="${area.id}"><b>${index + 1}</b><i style="background:${area.color}"></i>${area.name}</span>`
-  )
-  .join("");
 let currentArea = null;
 let toastTimer = 0;
 let rideToast = null;
@@ -199,6 +199,9 @@ const setKey = (code, value) => {
   return true;
 };
 
+const isUfoRide = () => !areas.isInsideDungeon() && vehicle.ride?.id === "ufo";
+const isShiftKey = (code) => code === "ShiftLeft" || code === "ShiftRight";
+
 window.addEventListener("keydown", (event) => {
   if (!started) {
     if (event.code === "Enter" || event.code === "Space") start();
@@ -206,14 +209,25 @@ window.addEventListener("keydown", (event) => {
   }
   if (setKey(event.code, true)) event.preventDefault();
   if (event.repeat) return;
-  if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
-    input.reset = true;
+  if (isShiftKey(event.code)) {
+    // Kart / on foot: boost/sprint. UFO: sonic boom.
+    if (isUfoRide()) input.reset = true;
+    else input.boost = true;
     event.preventDefault();
+  }
+  if (event.code === "KeyR") {
+    // Kart only: respawn. UFO: unbound.
+    if (!isUfoRide() && !areas.isInsideDungeon()) {
+      input.reset = true;
+      event.preventDefault();
+    }
   }
   if (event.code === "KeyC") follow.toggleChase();
   if (event.code === "KeyT") cycles.skip();
   if (event.code === "KeyE") areas.talk();
   if (event.code === "KeyV" && !areas.isInsideDungeon()) {
+    input.boost = false;
+    input.reset = false;
     rideToast = vehicle.cycleRide();
     follow.alignTo(vehicle.heading);
     follow.setFlyLook(vehicle.ride?.id === "ufo");
@@ -222,24 +236,119 @@ window.addEventListener("keydown", (event) => {
   const digit = /^Digit([0-4])$/.exec(event.code);
   if (digit) travel(Number(digit[1]) - 1);
 });
-window.addEventListener("keyup", (event) => setKey(event.code, false));
+window.addEventListener("keyup", (event) => {
+  setKey(event.code, false);
+  if (isShiftKey(event.code)) input.boost = false;
+});
 window.addEventListener("blur", () => {
   for (const key of Object.keys(input)) input[key] = false;
 });
 hud.time.addEventListener("click", () => cycles.skip());
-const setControlsOpen = (open) => {
-  hud.controls.classList.toggle("is-open", open);
-  hud.controlsToggle.setAttribute("aria-expanded", String(open));
+
+const syncMusicButton = () => {
+  const track = music.track;
+  if (hud.menuNowPlaying) {
+    if (music.muted) hud.menuNowPlaying.textContent = "Music off";
+    else if (music.paused) hud.menuNowPlaying.textContent = track ? `Paused · ${track.title} — ${track.artist}` : "Paused";
+    else if (track) hud.menuNowPlaying.textContent = `Now playing · ${track.title} — ${track.artist}`;
+    else hud.menuNowPlaying.textContent = "Music ready";
+  }
+  if (hud.menuMusicPause) {
+    hud.menuMusicPause.textContent = music.playing ? "⏸" : "▶";
+    hud.menuMusicPause.setAttribute("aria-label", music.playing ? "Pause" : "Play");
+    hud.menuMusicPause.title = music.playing ? "Pause" : "Play";
+    hud.menuMusicPause.classList.toggle("is-active", music.playing);
+  }
+  hud.menuMusicOff?.classList.toggle("is-active", music.muted);
 };
-hud.controlsToggle.addEventListener("click", (event) => {
+
+music.onTrackChange(() => syncMusicButton());
+
+const setMenuOpen = (open) => {
+  if (!hud.menu || !hud.menuToggle || !hud.menuPanel) return;
+  hud.menu.classList.toggle("is-open", open);
+  hud.menuToggle.setAttribute("aria-expanded", String(open));
+  if (open) hud.menuPanel.removeAttribute("hidden");
+  else hud.menuPanel.setAttribute("hidden", "");
+};
+
+const showMenuPage = (page) => {
+  for (const tab of document.querySelectorAll(".menu-tab")) {
+    const active = tab.dataset.page === page;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", String(active));
+  }
+  for (const panel of document.querySelectorAll(".menu-page")) {
+    panel.classList.toggle("is-active", panel.dataset.page === page);
+  }
+};
+
+const showControlMode = (mode) => {
+  for (const tab of document.querySelectorAll(".menu-subtab")) {
+    tab.classList.toggle("is-active", tab.dataset.mode === mode);
+  }
+  for (const panel of document.querySelectorAll(".menu-mode")) {
+    panel.classList.toggle("is-active", panel.dataset.mode === mode);
+  }
+};
+
+hud.menuToggle?.addEventListener("click", (event) => {
   event.preventDefault();
   event.stopPropagation();
-  setControlsOpen(!hud.controls.classList.contains("is-open"));
+  setMenuOpen(!hud.menu.classList.contains("is-open"));
 });
+
+hud.menuPanel?.addEventListener("click", (event) => {
+  const tab = event.target.closest?.(".menu-tab");
+  if (tab?.dataset.page) {
+    showMenuPage(tab.dataset.page);
+    return;
+  }
+  const sub = event.target.closest?.(".menu-subtab");
+  if (sub?.dataset.mode) showControlMode(sub.dataset.mode);
+});
+
+hud.menuMusicPause?.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  music.togglePause().then(syncMusicButton);
+});
+
+hud.menuMusicOff?.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  music.turnOff();
+  syncMusicButton();
+});
+
+hud.menuMusicRestart?.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  music.restart().then(syncMusicButton);
+});
+
+hud.menuMusicNext?.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  music.next().then(syncMusicButton);
+});
+
 window.addEventListener("pointerdown", (event) => {
-  if (!hud.controls.classList.contains("is-open") || hud.controls.contains(event.target)) return;
-  setControlsOpen(false);
+  if (!hud.menu?.classList.contains("is-open") || hud.menu.contains(event.target)) return;
+  setMenuOpen(false);
 });
+
+window.addEventListener(
+  "keydown",
+  (event) => {
+    if (!started || event.code !== "Escape") return;
+    if (!hud.menu?.classList.contains("is-open")) return;
+    setMenuOpen(false);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  },
+  true
+);
 
 function start() {
   if (started) return;
@@ -248,6 +357,7 @@ function start() {
   hud.hud.classList.add("is-visible");
   revealTime = 0;
   follow.startIntro();
+  music.start().then(syncMusicButton);
 }
 hud.start.addEventListener("click", start);
 hud.toast.addEventListener("click", () => {
@@ -258,6 +368,13 @@ hud.toast.addEventListener("click", () => {
 hud.dialogue.addEventListener("click", () => {
   areas.talk();
 });
+const setExitChipVisible = (visible) => {
+  if (!hud.exitDungeon) return;
+  hud.exitDungeon.classList.toggle("is-visible", visible);
+  if (visible) hud.exitDungeon.removeAttribute("hidden");
+  else hud.exitDungeon.setAttribute("hidden", "");
+};
+
 hud.exitDungeon?.addEventListener("click", () => {
   areas.exitHall();
 });
@@ -303,9 +420,10 @@ const applyWorldSwitch = (transition) => {
     islandRoot.visible = false;
     transition.dungeonGroup.visible = true;
     activeHuman = transition.human;
-    hud.exitDungeon?.classList.add("is-visible");
+    setExitChipVisible(true);
     follow.setFlyLook(false);
     follow.alignTo(activeHuman.heading);
+    follow.enterIndoor();
     follow.snap(activeHuman.position);
     follow.update(0, activeHuman.position, activeHuman.heading, activeHuman.velocity, { indoor: true });
     hud.toastEyebrow.textContent = transition.toastEyebrow || "Sanctuary Dungeon · Human Form";
@@ -313,7 +431,7 @@ const applyWorldSwitch = (transition) => {
     hud.toastName.style.color = transition.toastColor || "#ffd23f";
     hud.toastTagline.textContent =
       transition.toastTagline ||
-      "Walk with WASD, Space to jump, R to sprint. Approach any of the 5 statues and press E or Click!";
+      "WASD walk · Shift sprint · Space jump · Esc to leave. Approach a statue and press E or Click!";
     hud.toast.classList.add("is-visible");
     hud.toast.classList.remove("is-link", "has-progress", "is-story");
     delete hud.toast.dataset.url;
@@ -323,10 +441,11 @@ const applyWorldSwitch = (transition) => {
     transition.dungeonGroup.visible = false;
     islandRoot.visible = true;
     activeHuman = null;
-    hud.exitDungeon?.classList.remove("is-visible");
+    setExitChipVisible(false);
     if (transition.returnPose) {
       vehicle.teleport(transition.returnPose.x, transition.returnPose.z, transition.returnPose.heading);
     }
+    follow.exitIndoor();
     follow.snap(vehicle.position);
     follow.alignTo(vehicle.heading);
     follow.shake(0.3);
@@ -401,7 +520,6 @@ function tick(now) {
   }
   if (area !== currentArea && !inDungeon) {
     currentArea = area;
-    for (const row of destinationList.children) row.classList.toggle("is-here", currentArea?.id === row.dataset.id);
     if (area && started && !opened && !prompt) {
       hud.toastEyebrow.textContent = "Now arriving";
       hud.toastName.textContent = area.name;
@@ -418,7 +536,12 @@ function tick(now) {
     hud.toastEyebrow.textContent = "Now riding";
     hud.toastName.textContent = rideToast.name;
     hud.toastName.style.color = rideToast.color;
-    hud.toastTagline.textContent = rideToast.id === "ufo" ? "Mouse look, W camera-forward, S down, A/D turn. R dash, Shift boom, L light" : "The island kart";
+    hud.toastTagline.textContent =
+      rideToast.id === "ufo"
+        ? "Mouse look, W camera-forward, S down, A/D turn. Shift sonic boom, L light"
+        : rideToast.id === "f1"
+          ? "WASD drive, Shift boost, R respawn, Space jump, L rain light"
+          : "WASD drive, Shift boost, R respawn, Space jump";
     hud.toast.classList.add("is-visible");
     hud.toast.classList.remove("is-link", "has-progress", "is-story");
     delete hud.toast.dataset.url;

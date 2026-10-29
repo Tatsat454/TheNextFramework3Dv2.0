@@ -50,7 +50,7 @@ const STATUE_DEFS = [
     label: "FLO ROBOT",
     name: "Flo the Autonomous Helper Robot",
     bio: "Designed and 3D-printed Flo, a low-cost home robot that picks up clothes, carries them to a basket, and docks itself to recharge.",
-    url: "https://github.com/Tatsat454/FLO-Mini-v0.3",
+    url: "https://github.com/Tatsat454/FloTheRobot",
     color: "#14e4ff",
     x: 4.4,
     z: 1.5,
@@ -315,16 +315,6 @@ export function createTempleOfTribulations(area, _heightAt, colliders, assets, o
   // Volumetric Golden Oculus Sunbeam streaming onto the central Compass Rose Medallion (at Z = -3.2)
   dungeonGroup.add(createOculusSunbeam(3.2, 4.4, 13.0, 6.5, -3.2));
 
-  // Glowing Golden Exit Ring & Label at the South Entrance Doors (Z = -15.6)
-  const exitPortal = createPortalRing("#ffd23f", 1.5);
-  exitPortal.group.position.set(0, 0.06, -15.6);
-  dungeonGroup.add(exitPortal.group);
-
-  const exitLabel = make3DLabel("EXIT SANCTUARY", "#ffd23f");
-  exitLabel.scale.setScalar(0.65);
-  exitLabel.position.set(0, 3.6, -16.8);
-  dungeonGroup.add(exitLabel);
-
   // Human Explorer Character inside the Dungeon World!
   const human = createHumanExplorer();
   dungeonGroup.add(human.group);
@@ -448,7 +438,6 @@ export function createTempleOfTribulations(area, _heightAt, colliders, assets, o
   // ============================================================================
   let inDungeon = false;
   let nearExteriorStairs = false;
-  let nearDungeonExit = false;
   let opened = null;
   let prompt = null;
   let activeCamera = null;
@@ -472,7 +461,6 @@ export function createTempleOfTribulations(area, _heightAt, colliders, assets, o
   const exitDungeon = () => {
     if (!inDungeon) return;
     inDungeon = false;
-    nearDungeonExit = false;
     prompt = null;
     const outPos = toExteriorWorld(0, 0, 14.2);
     const outHeading = Math.atan2(sinY, cosY);
@@ -488,7 +476,7 @@ export function createTempleOfTribulations(area, _heightAt, colliders, assets, o
   const pointer = new THREE.Vector2();
   window.addEventListener("pointerdown", (event) => {
     if (!inDungeon || !activeCamera || event.button !== 0) return;
-    if (event.target?.closest?.("#hud, #intro, #toast, #controls, #dialogue, #dungeon-loader")) return;
+    if (event.target?.closest?.("#hud, #intro, #toast, #menu, #dialogue, #dungeon-loader")) return;
     pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
     pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(pointer, activeCamera);
@@ -528,10 +516,6 @@ export function createTempleOfTribulations(area, _heightAt, colliders, assets, o
         enterDungeon();
         return true;
       }
-      if (inDungeon && nearDungeonExit) {
-        exitDungeon();
-        return true;
-      }
       const active = interactiveStatues.find((s) => s.near);
       if (!active) return false;
       active.fired = true;
@@ -549,10 +533,6 @@ export function createTempleOfTribulations(area, _heightAt, colliders, assets, o
         if (active) {
           active.fired = true;
           opened = { ...active, blocked: !openLink(active.url) };
-          return true;
-        }
-        if (nearDungeonExit) {
-          exitDungeon();
           return true;
         }
       }
@@ -577,14 +557,6 @@ export function createTempleOfTribulations(area, _heightAt, colliders, assets, o
             prompt: false,
           };
         }
-        if (nearDungeonExit) {
-          return {
-            name: "Sanctuary Doors",
-            line: "Return to the Island",
-            hint: "Click or Press E (or Esc) to Exit",
-            prompt: false,
-          };
-        }
       }
       return null;
     },
@@ -594,7 +566,6 @@ export function createTempleOfTribulations(area, _heightAt, colliders, assets, o
     },
     update(time, _dt = 0.016, carPosition, camera) {
       activeCamera = camera;
-      exitPortal.torus.rotation.z = -time * 1.2;
 
       if (!inDungeon) {
         if (!carPosition) return;
@@ -636,10 +607,6 @@ export function createTempleOfTribulations(area, _heightAt, colliders, assets, o
         statue.near = statue === nearest;
         if (statue !== nearest) statue.fired = false;
       }
-
-      // 3. Check proximity to the South Exit Doors (z = -15.6)
-      const exitDist = Math.hypot(p.x - 0, p.z - -15.6);
-      nearDungeonExit = exitDist < 3.4;
 
       if (nearest && !nearest.fired) {
         prompt = {

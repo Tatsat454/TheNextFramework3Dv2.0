@@ -468,12 +468,12 @@ def build_air_hockey(marble_b, slate_b, gold_b, chrome_b, cyan_b, pink_b, white_
     slate_b.add_box(1.12 * s, 2.10 * s, 0.34 * s, center=(cx, cy, cz + 0.56 * s))
 
     marble_b.add_box(1.78 * s, 3.08 * s, 0.22 * s, center=(cx, cy, cz + 0.84 * s))
-    gold_b.add_box(1.84 * s, 3.14 * s, 0.06 * s, center=(cx, cy, cz + 0.92 * s))
+    gold_b.add_box(1.84 * s, 3.14 * s, 0.06 * s, center=(cx, cy, cz + 0.97 * s))
 
-    white_b.add_box(1.52 * s, 2.82 * s, 0.05 * s, center=(cx, cy, cz + 0.96 * s))
-    pink_b.add_box(1.48 * s, 0.05 * s, 0.06 * s, center=(cx, cy, cz + 0.965 * s))
-    cyan_b.add_cyl(0.28 * s, 0.28 * s, 0.062 * s, segs=20, center=(cx, cy, cz + 0.965 * s))
-    white_b.add_cyl(0.22 * s, 0.22 * s, 0.065 * s, segs=20, center=(cx, cy, cz + 0.966 * s))
+    white_b.add_box(1.52 * s, 2.82 * s, 0.05 * s, center=(cx, cy, cz + 1.025 * s))
+    pink_b.add_box(1.48 * s, 0.05 * s, 0.04 * s, center=(cx, cy, cz + 1.055 * s))
+    cyan_b.add_cyl(0.28 * s, 0.28 * s, 0.04 * s, segs=20, center=(cx, cy, cz + 1.055 * s))
+    white_b.add_cyl(0.22 * s, 0.22 * s, 0.045 * s, segs=20, center=(cx, cy, cz + 1.06 * s))
 
     for sy in (-1, 1):
         slate_b.add_box(0.58 * s, 0.12 * s, 0.08 * s, center=(cx, cy + sy * 1.42 * s, cz + 0.98 * s))
@@ -515,12 +515,13 @@ def build_arcade_exterior(col):
     green_b = Builder("Arcade_Glow_Green", MATS["glow_green"])
 
     # A. Stepped Cream & Gold Podium (22m W x 18m D, Z = 0 -> 1.8m)
+    # Keep stacked slab tops/bottoms non-overlapping to avoid z-fighting when the camera moves.
     marble_b.add_box(22.0, 17.6, 0.34, center=(0, 0.4, 0.17))
     dark_b.add_box(21.4, 17.0, 0.24, center=(0, 0.4, 0.46))
     marble_b.add_box(20.8, 16.4, 0.96, center=(0, 0.4, 1.06))
     gold_b.add_box(21.2, 16.8, 0.12, center=(0, 0.4, 1.60))
-    marble_b.add_box(21.0, 16.6, 0.16, center=(0, 0.4, 1.74))
-    floor_b.add_box(19.8, 15.4, 0.06, center=(0, 0.4, 1.83))
+    marble_b.add_box(21.0, 16.6, 0.14, center=(0, 0.4, 1.73))
+    floor_b.add_box(19.8, 15.4, 0.06, center=(0, 0.4, 1.86))
 
     # Grand Front Staircase (Y = -10.2 to -7.8)
     n_steps = 6
@@ -825,6 +826,8 @@ def build_arcade_interior(col):
     # 1. ARCADE CARPET FLOOR — classic neon confetti pattern + glowing circuit grid
     # ------------------------------------------------------------------
     B["carpet"].add_box(W + 0.4, D + 0.4, 0.24, center=(0, 0, -0.12))
+    # Floor overlays sit clearly above the carpet top (z=0) to avoid color flicker while walking.
+    DECAL_Z = 0.05
     seed = [1337]
 
     def rnd():
@@ -846,32 +849,32 @@ def build_arcade_interior(col):
         kind = len(placed_pts) % 5
         ang = rnd() * math.pi
         if kind == 0:
-            b.add_ring(0.14, 0.22, 0.02, segs=14, center=(px, py, 0.012), orientation="Z")
+            b.add_ring(0.14, 0.22, 0.02, segs=14, center=(px, py, DECAL_Z), orientation="Z")
         elif kind == 1:
-            b.add_ring(0.12, 0.24, 0.02, segs=3, center=(px, py, 0.012), orientation="Z")
+            b.add_ring(0.12, 0.24, 0.02, segs=3, center=(px, py, DECAL_Z), orientation="Z")
         elif kind == 2:  # zig-zag squiggle
             for k in range(3):
-                b.add_box(0.22, 0.06, 0.02, center=(px + (k - 1) * 0.16 * math.cos(ang), py + (k - 1) * 0.16 * math.sin(ang), 0.012),
+                b.add_box(0.22, 0.06, 0.02, center=(px + (k - 1) * 0.16 * math.cos(ang), py + (k - 1) * 0.16 * math.sin(ang), DECAL_Z),
                           rot=(0, 0, ang + (0.7 if k % 2 == 0 else -0.7)))
         elif kind == 3:
-            b.add_cyl(0.07, 0.07, 0.02, segs=10, center=(px, py, 0.012))
+            b.add_cyl(0.07, 0.07, 0.02, segs=10, center=(px, py, DECAL_Z))
         else:
-            b.add_box(0.42, 0.07, 0.02, center=(px, py, 0.012), rot=(0, 0, ang))
+            b.add_box(0.42, 0.07, 0.02, center=(px, py, DECAL_Z), rot=(0, 0, ang))
 
     # Glowing aisle runners leading from the door to the stage
     for sx in (-1, 1):
-        cyan.add_box(0.08, 20.6, 0.025, center=(sx * 2.4, -4.6, 0.014))
-        pink.add_box(0.05, 20.6, 0.025, center=(sx * 2.7, -4.6, 0.014))
+        cyan.add_box(0.08, 20.6, 0.025, center=(sx * 2.4, -4.6, DECAL_Z + 0.002))
+        pink.add_box(0.05, 20.6, 0.025, center=(sx * 2.7, -4.6, DECAL_Z + 0.002))
 
     # Central PS power-button medallion under the GPU fan (Three.js z = -2.2)
     med_y = -2.2
-    dark.add_cyl(2.7, 2.7, 0.03, segs=40, center=(0, med_y, 0.016))
-    cyan.add_ring(2.35, 2.6, 0.04, segs=40, center=(0, med_y, 0.02), orientation="Z")
-    white.add_ring(1.35, 1.55, 0.045, segs=32, center=(0, med_y, 0.022), orientation="Z", arc_pi=2.0)
-    white.add_box(0.22, 1.2, 0.05, center=(0, med_y + 0.9, 0.024))
-    add_controller_symbol(green, "triangle", (0, med_y + 1.95, 0.025), radius=0.26, depth=0.03, orientation="Z")
-    add_controller_symbol(pink, "circle", (1.95, med_y, 0.025), radius=0.26, depth=0.03, orientation="Z")
-    add_controller_symbol(goldg, "square", (-1.95, med_y, 0.025), radius=0.26, depth=0.03, orientation="Z")
+    dark.add_cyl(2.7, 2.7, 0.03, segs=40, center=(0, med_y, DECAL_Z + 0.005))
+    cyan.add_ring(2.35, 2.6, 0.04, segs=40, center=(0, med_y, DECAL_Z + 0.02), orientation="Z")
+    white.add_ring(1.35, 1.55, 0.045, segs=32, center=(0, med_y, DECAL_Z + 0.025), orientation="Z", arc_pi=2.0)
+    white.add_box(0.22, 1.2, 0.05, center=(0, med_y + 0.9, DECAL_Z + 0.03))
+    add_controller_symbol(green, "triangle", (0, med_y + 1.95, DECAL_Z + 0.035), radius=0.26, depth=0.03, orientation="Z")
+    add_controller_symbol(pink, "circle", (1.95, med_y, DECAL_Z + 0.035), radius=0.26, depth=0.03, orientation="Z")
+    add_controller_symbol(goldg, "square", (-1.95, med_y, DECAL_Z + 0.035), radius=0.26, depth=0.03, orientation="Z")
 
     # ------------------------------------------------------------------
     # 2. SHELL: black PC-case walls + solid ceiling
@@ -934,12 +937,8 @@ def build_arcade_interior(col):
     coolant_p.add_box(24.4, 0.16, 0.16, center=(0.0, 4.0, 8.8))
 
     # ------------------------------------------------------------------
-    # 5. PS5 PILLARS along both aisles (Three.js colliders at x = ±8.2)
+    # 5. (PS5 aisle pillars removed — they blocked the hall and had no solid wall feel)
     # ------------------------------------------------------------------
-    rib_ys = [-11.5, -6.0, -0.5, 5.0, 10.5]
-    for sx in (-1, 1):
-        for idx, ry in enumerate(rib_ys):
-            add_ps5_pillar(ps5, dark, cyan if (idx + (sx > 0)) % 2 == 0 else pink, sx * 8.2, ry, H - 0.4, sx)
 
     # ------------------------------------------------------------------
     # 6. SIDE WALLS: tempered-glass panels, 3 big RGB fans, RAM sticks, symbols

@@ -168,6 +168,8 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
   dungeonGroup.visible = false;
 
   const EXT_SCALE = 1.15;
+  // Lift the pavilion above the Market Row plaza pad so cream podium vs peach tiles don't flicker.
+  const EXT_LIFT = 0.2;
   const entranceVec = new THREE.Vector2(-area.direction.x, -area.direction.z).normalize();
   const yaw = Math.atan2(-entranceVec.x, -entranceVec.y) + Math.PI;
   const cosY = Math.cos(yaw);
@@ -227,6 +229,88 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
     );
   };
 
+  // Keep floor bases behind near-coplanar neon/medallion overlays so they don't flicker while moving.
+  const biasDepth = (material, factor, units) => {
+    material.polygonOffset = true;
+    material.polygonOffsetFactor = factor;
+    material.polygonOffsetUnits = units;
+  };
+  biasDepth(arcadeMaterials.Arcade_Carpet, 4, 4);
+  biasDepth(arcadeMaterials.Arcade_Marble_Cream, 1, 1);
+  biasDepth(arcadeMaterials.Arcade_Floor_Cream, -2, -2);
+  biasDepth(arcadeMaterials.Arcade_Cab_Black, -1, -1);
+  for (const [name, material] of Object.entries(arcadeMaterials)) {
+    if (/Glow_|Coolant_|Gold_Trim|Chrome/.test(name)) {
+      biasDepth(material, -3, -3);
+    }
+  }
+
+  // Neon confetti / aisle runners / medallion sit only ~1mm above the carpet in the GLB — lift them clear.
+  const liftFloorOverlays = (root) => {
+    root.traverse((child) => {
+      if (!child.isMesh) return;
+      const name = child.name || "";
+      const isGlow = /Glow_|Coolant_/.test(name);
+      const isMedallionHost = /Cab_Black/.test(name);
+      if (!isGlow && !isMedallionHost) return;
+      const pos = child.geometry.attributes.position;
+      let changed = false;
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i);
+        if (y <= -0.03 || y >= 0.05) continue;
+        if (isMedallionHost) {
+          const x = pos.getX(i);
+          const z = pos.getZ(i);
+          // Central CPU medallion disk only (not wall bottoms).
+          if (Math.hypot(x, z + 2.2) > 3.0 && Math.hypot(x, z - 2.2) > 3.0) continue;
+        }
+        pos.setY(i, Math.max(y, 0) + 0.05);
+        changed = true;
+      }
+      if (!changed) return;
+      pos.needsUpdate = true;
+      child.geometry.computeBoundingBox();
+      child.geometry.computeBoundingSphere();
+    });
+  };
+
+  // PS5 aisle pillars were authored at blender x=±8.2 — strip them from the merged interior meshes.
+  const PILLAR_ZS = [11.5, 6.0, 0.5, 5.0, 10.5];
+  const nearArcadePillar = (x, z) => {
+    if (Math.abs(Math.abs(x) - 8.2) > 1.55) return false;
+    return PILLAR_ZS.some((pz) => Math.abs(Math.abs(z) - pz) < 1.7);
+  };
+  const removeArcadePillars = (root) => {
+    root.traverse((child) => {
+      if (!child.isMesh) return;
+      if (!/PS5_White|Cab_Black|Glow_Cyan|Glow_Pink/.test(child.name || "")) return;
+      const flat = child.geometry.index ? flatten(child.geometry.clone()) : child.geometry;
+      const fPos = flat.attributes.position;
+      const out = [];
+      for (let i = 0; i < fPos.count; i += 3) {
+        const ax = fPos.getX(i);
+        const ay = fPos.getY(i);
+        const az = fPos.getZ(i);
+        const bx = fPos.getX(i + 1);
+        const by = fPos.getY(i + 1);
+        const bz = fPos.getZ(i + 1);
+        const cx = fPos.getX(i + 2);
+        const cy = fPos.getY(i + 2);
+        const cz = fPos.getZ(i + 2);
+        if (nearArcadePillar((ax + bx + cx) / 3, (az + bz + cz) / 3)) continue;
+        out.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+      }
+      if (out.length === fPos.count * 3) {
+        child.geometry = flat;
+        return;
+      }
+      const cleaned = new THREE.BufferGeometry();
+      cleaned.setAttribute("position", new THREE.Float32BufferAttribute(out, 3));
+      cleaned.computeVertexNormals();
+      child.geometry = cleaned;
+    });
+  };
+
   const styleModel = (root, { isInterior = false } = {}) => {
     root.traverse((child) => {
       if (!child.isMesh) return;
@@ -251,13 +335,17 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
       child.receiveShadow = !isEmissive;
       child.frustumCulled = false;
     });
+    if (isInterior) {
+      removeArcadePillars(root);
+      liftFloorOverlays(root);
+    }
   };
 
   // ============================================================================
   // A. EXTERIOR ARCADE PAVILION ON EXPANDED MARKET ROW ISLAND
   // ============================================================================
   const exteriorRoot = new THREE.Group();
-  exteriorRoot.position.set(area.x, area.y, area.z);
+  exteriorRoot.position.set(area.x, area.y + EXT_LIFT, area.z);
   exteriorRoot.rotation.y = yaw;
   exteriorRoot.scale.setScalar(EXT_SCALE);
   exteriorGroup.add(exteriorRoot);
@@ -271,7 +359,7 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
   const toExteriorWorld = (lx, ly, lz) =>
     new THREE.Vector3(
       area.x + (lx * cosY + lz * sinY) * EXT_SCALE,
-      area.y + ly * EXT_SCALE,
+      area.y + EXT_LIFT + ly * EXT_SCALE,
       area.z + (-lx * sinY + lz * cosY) * EXT_SCALE
     );
 
@@ -326,16 +414,6 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
 
   // Volumetric Cyan/Gold GPU Oculus Beam streaming down onto the CPU Socket Medallion (Z = -2.2)
   dungeonGroup.add(createGpuOculusBeam(2.8, 4.2, 11.2, 5.6, -2.2));
-
-  // Glowing Golden EXIT ARCADE Ring & 3D Label at the South Entrance Doors (Z = -14.0)
-  const exitPortal = createPortalRing("#ffd23f", 1.5);
-  exitPortal.group.position.set(0, 0.06, -14.0);
-  dungeonGroup.add(exitPortal.group);
-
-  const exitLabel = make3DLabel("EXIT ARCADE", "#ffd23f");
-  exitLabel.scale.setScalar(0.65);
-  exitLabel.position.set(0, 3.6, -15.0);
-  dungeonGroup.add(exitLabel);
 
   // Decorative 3D Labels for Claw Machines & Air Hockey Wing
   const clawLabel = make3DLabel("CLAW MACHINES", "#ff6b9d");
@@ -396,14 +474,27 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
     });
   }
 
-  // Colliders & Per-Unit Glows for the 2 Claw Machines (x = -4.6, z = [-5.5, -1.2]),
-  // the Air Hockey Table (x = 4.4, z = -3.3), PS5 Console Ribs (x = ±8.2), and Wall RGB Fans!
+  // Claw machines + air hockey (PS5 aisle pillars removed).
   dungeonColliders.push(
     { x: -4.6, z: -5.5, radius: 1.35 },
     { x: -4.6, z: -1.2, radius: 1.35 },
     { x: 4.4, z: -4.4, radius: 1.35 },
     { x: 4.4, z: -2.2, radius: 1.35 }
   );
+
+  // Solid wall shell colliders (hall is ~28x32; leave the south door gap open for the exit).
+  const WALL = 13.35;
+  const WALL_Z = 15.35;
+  const wallStep = 1.7;
+  for (let z = -WALL_Z; z <= WALL_Z; z += wallStep) {
+    dungeonColliders.push({ x: -WALL, z, radius: 0.95 }, { x: WALL, z, radius: 0.95 });
+  }
+  for (let x = -WALL + wallStep; x <= WALL - wallStep; x += wallStep) {
+    dungeonColliders.push({ x, z: WALL_Z, radius: 0.95 });
+    // South entrance wall — keep a door gap around x≈0 for the exit portal
+    if (Math.abs(x) > 2.4) dungeonColliders.push({ x, z: -WALL_Z, radius: 0.95 });
+  }
+  const dungeonBounds = { minX: -12.9, maxX: 12.9, minZ: -15.0, maxZ: 14.9 };
   // Physical Three.js Lights inside the Arcade Hall (Warm, bright Bruno-Simon toy lighting)
   const dungeonAmbient = new THREE.AmbientLight("#fff8ed", 1.8);
   dungeonGroup.add(dungeonAmbient);
@@ -460,21 +551,30 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
   ];
   dungeonGroup.add(createGlows(purpleGlows, { color: "#7c6cf0", size: 140, day: 0.85 }));
 
-  // Floor height inside the Arcade Hall (flat floor + raised North Stage at z >= 6.2)
-  const dungeonSurfaceAt = (_x, z) => {
-    if (z >= 6.2) {
+  // Floor height: raised North Stage only (visual slab is ~14.2 wide). Using full-width
+  // height here made invisible staircases on the left/right flanks outside the podium.
+  const STAGE_HALF_W = 7.05;
+  const dungeonSurfaceAt = (x, z) => {
+    if (z >= 6.2 && Math.abs(x) <= STAGE_HALF_W) {
       const t = THREE.MathUtils.clamp((z - 6.2) / 1.8, 0, 1);
       return t * 0.65;
     }
     return 0.0;
   };
 
+  // Block walking into the raised stage sides from the flat side aisles
+  for (let z = 6.4; z <= 14.8; z += 1.15) {
+    dungeonColliders.push(
+      { x: -STAGE_HALF_W, z, radius: 0.55 },
+      { x: STAGE_HALF_W, z, radius: 0.55 }
+    );
+  }
+
   // ============================================================================
   // C. STATE & INTERACTIONS
   // ============================================================================
   let inDungeon = false;
   let nearExteriorCircle = false;
-  let nearDungeonExit = false;
   let opened = null;
   let prompt = null;
   let activeCamera = null;
@@ -511,7 +611,8 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
       subtitle: "Step inside the Retro Arcade Hall!",
       toastEyebrow: "Retro Island Arcade · Human Form",
       toastColor: "#ff5b4a",
-      toastTagline: "Walk with WASD, Space to jump, R to sprint. Approach any of the 4 Arcade Machines and press E or Click!",
+      toastTagline:
+        "WASD walk · Shift sprint · Space jump · Esc to leave. Approach a cabinet and press E or Click to play!",
     });
   };
 
@@ -523,7 +624,6 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
     cameraOverride = null;
     activePlayingMachine = null;
     inDungeon = false;
-    nearDungeonExit = false;
     prompt = null;
     const outPos = toExteriorWorld(0, 0, 13.5);
     const outHeading = Math.atan2(sinY, cosY);
@@ -538,7 +638,7 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
   const pointer = new THREE.Vector2();
   window.addEventListener("pointerdown", (event) => {
     if (!inDungeon || !activeCamera || event.button !== 0) return;
-    if (event.target?.closest?.("#hud, #intro, #toast, #controls, #dialogue, #dungeon-loader, #arcade-game")) return;
+    if (event.target?.closest?.("#hud, #intro, #toast, #menu, #dialogue, #dungeon-loader, #arcade-game")) return;
     pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
     pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(pointer, activeCamera);
@@ -585,10 +685,6 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
         enterDungeon();
         return true;
       }
-      if (inDungeon && nearDungeonExit) {
-        exitDungeon();
-        return true;
-      }
       const active = interactiveMachines.find((m) => m.near);
       if (!active) return false;
       active.fired = true;
@@ -606,10 +702,6 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
         if (active) {
           active.fired = true;
           playMachineGame(active);
-          return true;
-        }
-        if (nearDungeonExit) {
-          exitDungeon();
           return true;
         }
       }
@@ -634,28 +726,26 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
             prompt: false,
           };
         }
-        if (nearDungeonExit) {
-          return {
-            name: "Arcade Exit Portal",
-            line: "Return to Market Row",
-            hint: "Click or Press E (or Esc) to Exit",
-            prompt: false,
-          };
-        }
       }
       return null;
     },
     updateDungeonPlayer(dt, input, cameraHeading) {
       if (!inDungeon) return;
       if (gameOverlay.isOpen()) {
-        human.update(dt, { forward: false, backward: false, left: false, right: false, jump: false, sprint: false }, cameraHeading, dungeonSurfaceAt, dungeonColliders);
+        human.update(
+          dt,
+          { forward: false, backward: false, left: false, right: false, jump: false, sprint: false },
+          cameraHeading,
+          dungeonSurfaceAt,
+          dungeonColliders,
+          dungeonBounds
+        );
         return;
       }
-      human.update(dt, input, cameraHeading, dungeonSurfaceAt, dungeonColliders);
+      human.update(dt, input, cameraHeading, dungeonSurfaceAt, dungeonColliders, dungeonBounds);
     },
     update(time, _dt = 0.016, carPosition, camera) {
       activeCamera = camera;
-      exitPortal.torus.rotation.z = -time * 1.2;
 
       if (!inDungeon) {
         if (!carPosition) return;
@@ -689,9 +779,6 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
         machine.near = machine === nearest;
         if (machine !== nearest) machine.fired = false;
       }
-
-      const exitDist = Math.hypot(p.x - 0, p.z - -14.0);
-      nearDungeonExit = exitDist < 3.4;
 
       if (nearest && !nearest.fired) {
         prompt = {

@@ -1,7 +1,12 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createEmissiveMaterial, createSolidMaterial, shared } from "./shading.js";
 import { damp, dampAngle } from "./noise.js";
+import { F1CarController } from "./f1CarController.js";
+
+const F1_TARGET_LENGTH = 7.1; // 2x prior scale — user-requested size
+const F1_CLEARANCE = 0.28; // lift so pitched body/wheels don't bury into terrain
 
 const WHEEL_RADIUS = 0.52;
 const HALF_LENGTH = 1.35;
@@ -280,25 +285,63 @@ function createSonicBoom() {
   return { group, rings, flash, flashMat, time: 0, active: false };
 }
 
-export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colliders, particles }) {
+async function loadF1Ride() {
+  const holder = new THREE.Group();
+  holder.visible = false;
+  try {
+    const gltf = await new GLTFLoader().loadAsync("/f1_rigged.glb");
+    const model = gltf.scene;
+    model.traverse((child) => {
+      if (!child.isMesh) return;
+      child.castShadow = true;
+      child.receiveShadow = true;
+    });
+
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const scale = F1_TARGET_LENGTH / Math.max(size.z, 0.001);
+    model.scale.setScalar(scale);
+    model.updateMatrixWorld(true);
+    const fitted = new THREE.Box3().setFromObject(model);
+    const center = fitted.getCenter(new THREE.Vector3());
+    model.position.set(-center.x, -fitted.min.y, -center.z);
+    holder.add(model);
+    model.updateMatrixWorld(true);
+    const after = new THREE.Box3().setFromObject(holder);
+    const afterSize = after.getSize(new THREE.Vector3());
+
+    const controller = new F1CarController(model);
+    return { holder, controller, length: afterSize.z, width: afterSize.x, height: afterSize.y };
+  } catch (error) {
+    console.warn("F1 ride failed to load:", error);
+    return { holder, controller: null };
+  }
+}
+
+export async function createVehicle({ spawn, heading = 0, groundHeight, terrain, colliders, particles }) {
   const car = buildCar();
   const ufo = buildUfo();
   const boom = createSonicBoom();
+  const f1 = await loadF1Ride();
   car.root.add(ufo.holder);
+  car.root.add(f1.holder);
   ufo.holder.visible = false;
   const rides = [
     { id: "car", name: "Kart", color: "#ff5b4a" },
+    ...(f1.controller ? [{ id: "f1", name: "F1", color: "#e10600" }] : []),
     { id: "ufo", name: "UFO", color: "#3ad1c4" },
   ];
   let rideIndex = 0;
 
   const flying = () => rides[rideIndex].id === "ufo";
+  const isF1 = () => rides[rideIndex].id === "f1";
 
   const applyRide = () => {
     const ride = rides[rideIndex];
     const isCar = ride.id === "car";
     car.body.visible = isCar;
     for (const wheel of car.wheels) wheel.steer.visible = isCar;
+    f1.holder.visible = ride.id === "f1";
     ufo.holder.visible = ride.id === "ufo";
     const ground = groundHeight(position.x, position.z);
     if (ride.id === "ufo") {
@@ -308,7 +351,7 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
       state.vy = 0;
       state.stunt = null;
     } else {
-      position.y = ground;
+      position.y = ground + (ride.id === "f1" ? F1_CLEARANCE : 0);
       state.grounded = true;
       state.vy = 0;
       state.airspeed = 0;
@@ -649,27 +692,29 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
 
     const throttle = (input.forward ? 1 : 0) - (input.backward ? 1 : 0);
     const steerTarget = (input.left ? 1 : 0) - (input.right ? 1 : 0);
-    state.steer = damp(state.steer, steerTarget, 10, dt);
+    state.steer = damp(state.steer, steerTarget, isF1() ? 12 : 10, dt);
     const boosting = input.boost && throttle > 0;
-    const topSpeed = boosting ? 36 : 23;
+    const f1Ride = isF1();
+    const topSpeed = f1Ride ? (boosting ? 34 : 26) : boosting ? 36 : 23;
     const grip = state.grounded ? 1 : 0.15;
 
     if (throttle > 0) {
       const headroom = Math.max(0, 1 - forwardSpeed / topSpeed);
-      forwardSpeed += (boosting ? 44 : 30) * headroom * grip * dt;
+      const push = f1Ride ? (boosting ? 38 : 28) : boosting ? 44 : 30;
+      forwardSpeed += push * headroom * grip * dt;
     } else if (throttle < 0) {
-      if (forwardSpeed > 0.5) forwardSpeed -= 46 * grip * dt;
-      else forwardSpeed = Math.max(-10, forwardSpeed - 18 * grip * dt);
+      if (forwardSpeed > 0.5) forwardSpeed -= (f1Ride ? 50 : 46) * grip * dt;
+      else forwardSpeed = Math.max(f1Ride ? -10 : -10, forwardSpeed - 18 * grip * dt);
     } else {
-      forwardSpeed *= Math.exp(-(state.grounded ? 1.1 : 0.1) * dt);
+      forwardSpeed *= Math.exp(-(state.grounded ? (f1Ride ? 1.05 : 1.1) : 0.1) * dt);
     }
     if (forwardSpeed > topSpeed) forwardSpeed = damp(forwardSpeed, topSpeed, 1.5, dt);
 
-    const lateralGrip = state.grounded ? (input.boost ? 4.5 : 9) : 0.6;
+    const lateralGrip = state.grounded ? (input.boost ? (f1Ride ? 3.6 : 4.5) : f1Ride ? 7.2 : 9) : 0.6;
     lateralSpeed = damp(lateralSpeed, 0, lateralGrip, dt);
 
-    const steerAuthority = Math.min(1, Math.abs(forwardSpeed) / 5) * Math.sign(forwardSpeed);
-    const turnRate = 2.35 * (1 - Math.min(0.45, Math.abs(forwardSpeed) / 70));
+    const steerAuthority = Math.min(1, Math.abs(forwardSpeed) / (f1Ride ? 7 : 5)) * Math.sign(forwardSpeed);
+    const turnRate = (f1Ride ? 2.05 : 2.35) * (1 - Math.min(0.45, Math.abs(forwardSpeed) / (f1Ride ? 90 : 70)));
     state.heading += state.steer * steerAuthority * turnRate * (state.grounded ? 1 : 0.45) * dt;
 
     forward.set(Math.sin(state.heading), Math.cos(state.heading));
@@ -745,25 +790,26 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     position.z = nextZ;
     const ground = groundHeight(position.x, position.z);
 
+    const groundY = ground + (f1Ride ? F1_CLEARANCE : 0);
     if (state.grounded) {
       const followVy = THREE.MathUtils.clamp((ground - ground0) / Math.max(dt, 1e-4), -30, 30);
       if (input.jump && !state.jumpLatch) {
         state.vy = Math.max(followVy, 0) + 11;
         state.grounded = false;
-        position.y = ground + 0.05;
-      } else if (ground < position.y - 0.45) {
+        position.y = groundY + 0.05;
+      } else if (ground < position.y - 0.45 - (f1Ride ? F1_CLEARANCE : 0)) {
         state.grounded = false;
       } else {
-        position.y = ground;
+        position.y = groundY;
         state.vy = followVy;
       }
     } else {
       state.vy -= GRAVITY * dt;
       position.y += state.vy * dt;
       state.airTime += dt;
-      if (position.y <= ground) {
+      if (position.y <= groundY) {
         const landing = -state.vy;
-        position.y = ground;
+        position.y = groundY;
         state.grounded = true;
         state.bodyVelocity -= Math.min(10, landing * 0.35);
         if (landing > 6) {
@@ -825,16 +871,23 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     } else {
       const sin = Math.sin(state.heading);
       const cos = Math.cos(state.heading);
+      const halfL = isF1() && f1.length ? f1.length * 0.42 : HALF_LENGTH;
+      const halfW = isF1() && f1.width ? f1.width * 0.42 : HALF_WIDTH;
       const sample = (lx, lz) => groundHeight(position.x + sin * lz + cos * lx, position.z + cos * lz - sin * lx);
       let targetPitch = 0;
       let targetRoll = 0;
       if (state.grounded) {
-        const front = sample(0, HALF_LENGTH);
-        const back = sample(0, -HALF_LENGTH);
-        const left = sample(HALF_WIDTH, 0);
-        const right = sample(-HALF_WIDTH, 0);
-        targetPitch = Math.atan2(back - front, HALF_LENGTH * 2);
-        targetRoll = Math.atan2(left - right, HALF_WIDTH * 2);
+        const front = sample(0, halfL);
+        const back = sample(0, -halfL);
+        const left = sample(halfW, 0);
+        const right = sample(-halfW, 0);
+        targetPitch = Math.atan2(back - front, halfL * 2);
+        targetRoll = Math.atan2(left - right, halfW * 2);
+        if (isF1()) {
+          // Long chassis: soften slope align so corners don't bury into terrain.
+          targetPitch = THREE.MathUtils.clamp(targetPitch * 0.55, -0.18, 0.18);
+          targetRoll = THREE.MathUtils.clamp(targetRoll * 0.55, -0.16, 0.16);
+        }
       } else {
         targetPitch = THREE.MathUtils.clamp(-state.vy * 0.025, -0.4, 0.4);
       }
@@ -851,6 +904,8 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
     else car.root.rotation.set(state.pitch, state.heading, state.roll, "YXZ");
     car.body.position.y = state.bodyOffset * 0.6;
     car.body.rotation.set(state.bodyPitch, 0, state.bodyRoll);
+    f1.holder.position.y = state.bodyOffset * 0.45;
+    f1.holder.rotation.set(state.bodyPitch * 0.85, 0, state.bodyRoll * 0.9);
 
     if (car.body.visible) {
       for (const wheel of car.wheels) {
@@ -858,6 +913,13 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
         if (wheel.front) wheel.steer.rotation.y = state.steer * 0.42;
       }
       car.flag.rotation.y = Math.sin(performance.now() * 0.012) * 0.25 - Math.min(0.6, Math.abs(forwardSpeed) * 0.03);
+    }
+    if (f1.holder.visible && f1.controller) {
+      const braking = input.backward && forwardSpeed > 0.5;
+      f1.controller.setSpeed(forwardSpeed);
+      f1.controller.setSteer(state.steer * f1.controller.maxSteer);
+      f1.controller.setBraking(braking);
+      f1.controller.update(dt);
     }
     if (ufo.holder.visible) {
       const dash = state.stunt === "dash" || state.stunt === "boom" || input.boost;
@@ -902,9 +964,16 @@ export function createVehicle({ spawn, heading = 0, groundHeight, terrain, colli
       return state.ufoLight;
     },
     toggleLights() {
-      state.ufoLight = !state.ufoLight;
-      ufo.beamMaterial.uniforms.uBeam.value = state.ufoLight ? 1 : 0;
-      return state.ufoLight;
+      if (flying()) {
+        state.ufoLight = !state.ufoLight;
+        ufo.beamMaterial.uniforms.uBeam.value = state.ufoLight ? 1 : 0;
+        return state.ufoLight;
+      }
+      if (isF1() && f1.controller) {
+        f1.controller.setRainLight(!f1.controller.rainLight);
+        return f1.controller.rainLight;
+      }
+      return false;
     },
     cycleRide() {
       if (rides.length < 2) return rides[rideIndex];
