@@ -13,6 +13,7 @@ export const shared = {
   uRevealRadius: { value: 0 },
   uRevealColor: { value: new THREE.Color("#ffd27a") },
   uNight: { value: 0 },
+  uIndoor: { value: 0 },
   uTerrainData: { value: null },
   uWorldSize: { value: 1 },
   uGrid: { value: 2 },
@@ -42,6 +43,7 @@ uniform vec2 uRevealCenter;
 uniform float uRevealRadius;
 uniform vec3 uRevealColor;
 uniform float uNight;
+uniform float uIndoor;
 uniform sampler2D uTerrainData;
 uniform float uWorldSize;
 uniform float uGrid;
@@ -96,7 +98,94 @@ vec3 grassColor(vec2 xz) {
 `;
 
 const FRAGMENT_GLSL = /* glsl */ `
+vec3 indoorStylize(vec3 base, vec3 normal, vec3 wp, float shadowMask) {
+  // 1. Sculptural Key Light from the Overhead Oculus + Statue/Human Shadows
+  vec3 keyDir = normalize(vec3(0.28, 0.88, -0.34));
+  float ndl = dot(normal, keyDir);
+  float keyDiffuse = smoothstep(-0.38, 0.72, ndl);
+  float castShadow = (1.0 - shadowMask) * 0.55;
+  float directFactor = clamp(keyDiffuse * (1.0 - castShadow), 0.14, 1.0);
+
+  // 2. Overhead Oculus Sunbeam Pool (x=0, z=-3.2) & North Altar Sanctuary Glow (x=0, z=15.0)
+  float oculusDist = length(wp.xz - vec2(0.0, -3.2));
+  float oculusPool = smoothstep(8.8, 1.6, oculusDist) * (max(normal.y, 0.0) * 0.7 + 0.3);
+  vec3 altarPos = vec3(0.0, 4.2, 15.2);
+  float altarDist = length(wp - altarPos);
+  float altarPool = smoothstep(14.5, 1.5, altarDist) * (max(dot(normal, normalize(altarPos - wp)), 0.0) * 0.65 + 0.35);
+
+  // 3. Per-Lamp Point-Light Illumination for ALL 40 Sanctuary Lamps:
+  //    - 10 Column Twin Sconces (x=±6.23, y=4.46, z=cellZ)
+  //    - 14 Wall Pilaster Sconces (x=±13.88, y=4.55, z=pilasterZ)
+  //    - 10 Side-Aisle Alcove Braziers (x=±14.85, y=3.22, z=alcoveZ)
+  //    - 6 North Altar Candelabra Braziers (x=±[2.0, 3.1, 4.2], y=2.53, z=15.8)
+  float sideX = wp.x >= 0.0 ? 1.0 : -1.0;
+  float cellZ = clamp(floor((wp.z + 1.4) / 5.8 + 0.5) * 5.8 - 1.4, -13.0, 10.2);
+  float pilasterZ = wp.z < -14.9 ? -16.8 : (wp.z > 13.1 ? 16.0 : cellZ);
+  float alcoveZ = clamp(floor((wp.z - 1.5) / 5.8 + 0.5) * 5.8 + 1.5, -10.1, 13.1);
+  float altarX = sideX * clamp(floor((abs(wp.x) - 2.0) / 1.1 + 0.5) * 1.1 + 2.0, 2.0, 4.2);
+  float flicker = 0.94 + 0.06 * sin(uTime * 6.5 + wp.z * 1.7 + sideX);
+
+  vec3 colTorch = vec3(sideX * 6.23, 4.46, cellZ);
+  vec3 toCol = colTorch - wp;
+  float dCol = length(toCol);
+  float colLight = pow(clamp(1.0 - dCol / 9.2, 0.0, 1.0), 1.8) * (max(dot(normal, toCol / max(dCol, 0.001)), 0.0) * 0.72 + 0.28)
+                 + smoothstep(2.8, 0.25, dCol) * 0.65;
+
+  vec3 pilTorch = vec3(sideX * 13.88, 4.55, pilasterZ);
+  vec3 toPil = pilTorch - wp;
+  float dPil = length(toPil);
+  float pilLight = pow(clamp(1.0 - dPil / 7.5, 0.0, 1.0), 1.85) * (max(dot(normal, toPil / max(dPil, 0.001)), 0.0) * 0.72 + 0.28)
+                 + smoothstep(2.6, 0.25, dPil) * 0.65;
+
+  vec3 alcTorch = vec3(sideX * 14.85, 3.22, alcoveZ);
+  vec3 toAlc = alcTorch - wp;
+  float dAlc = length(toAlc);
+  float alcLight = pow(clamp(1.0 - dAlc / 7.2, 0.0, 1.0), 1.85) * (max(dot(normal, toAlc / max(dAlc, 0.001)), 0.0) * 0.75 + 0.25)
+                 + smoothstep(2.5, 0.22, dAlc) * 0.70;
+
+  vec3 altTorch = vec3(altarX, 2.53, 15.8);
+  vec3 toAlt = altTorch - wp;
+  float dAlt = length(toAlt);
+  float altLight = pow(clamp(1.0 - dAlt / 7.8, 0.0, 1.0), 1.8) * (max(dot(normal, toAlt / max(dAlt, 0.001)), 0.0) * 0.72 + 0.28)
+                 + smoothstep(2.6, 0.25, dAlt) * 0.68;
+
+  // 4. Column Base Contact AO, Wall/Floor Corner AO & Coffered Ceiling Depth
+  float distToColBase = length(wp.xz - vec2(sideX * 7.0, cellZ));
+  float colBaseAO = smoothstep(2.3, 0.85, distToColBase) * smoothstep(1.6, 0.0, wp.y) * 0.36;
+  float wallProximity = smoothstep(11.5, 14.9, abs(wp.x)) + smoothstep(14.5, 17.9, abs(wp.z));
+  float floorCornerAO = smoothstep(1.6, 0.0, wp.y) * clamp(wallProximity, 0.0, 1.0) * 0.30;
+  float ceilingAO = smoothstep(10.2, 13.4, wp.y) * (1.0 - smoothstep(6.5, 2.5, oculusDist)) * 0.28;
+  float ao = clamp(1.0 - colBaseAO - floorCornerAO - ceilingAO, 0.46, 1.0);
+
+  // 5. Blend Cool Architectural Shadow + Warm Sunlit Marble + Per-Lamp Golden Torchlight
+  vec3 shadowTone = base * vec3(0.48, 0.52, 0.68);
+  vec3 sunlitTone = base * vec3(1.08, 1.02, 0.92);
+  vec3 color = mix(shadowTone, sunlitTone, directFactor) * ao;
+
+  vec3 torchColor = vec3(1.0, 0.64, 0.22) * flicker;
+  vec3 oculusColor = vec3(1.0, 0.93, 0.75);
+  float totalLampLight = colLight * 0.68 + pilLight * 0.58 + alcLight * 0.62 + altLight * 0.65 + altarPool * 0.38;
+  color += base * torchColor * totalLampLight;
+  color += base * oculusColor * (oculusPool * 0.52);
+
+  // 6. Specular Highlights on Polished Marble Floor & Fluted Columns
+  vec3 viewDir = normalize(cameraPosition - wp);
+  vec3 halfCol = normalize(normalize(toCol) + viewDir);
+  float isFloor = smoothstep(0.7, 0.95, normal.y) * (1.0 - smoothstep(0.1, 1.3, wp.y));
+  float shininess = mix(22.0, 42.0, isFloor);
+  float specStrength = mix(0.22, 0.52, isFloor);
+  float torchSpec = pow(max(dot(normal, halfCol), 0.0), shininess) * colLight * specStrength;
+  vec3 halfOculus = normalize(keyDir + viewDir);
+  float oculusSpec = pow(max(dot(normal, halfOculus), 0.0), 36.0) * oculusPool * isFloor * 0.45;
+  color += torchColor * torchSpec + oculusColor * oculusSpec;
+
+  return color;
+}
+
 vec3 stylize(vec3 base, vec3 normal, vec3 worldPosition, float extraShadow, float shadowMask) {
+  if (uIndoor > 0.5) {
+    return indoorStylize(base, normal, worldPosition, shadowMask);
+  }
   float ndl = dot(normal, uSunDirection);
   float core = smoothstep(0.62, -0.2, ndl);
   float drop = 1.0 - shadowMask;

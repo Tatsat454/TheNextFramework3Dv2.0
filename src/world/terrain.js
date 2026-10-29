@@ -3,7 +3,7 @@ import { createNoise2D, fbm, mulberry32, smoothstep, lerp } from "./noise.js";
 import { createStylizedMaterial, shared } from "./shading.js";
 import { AREAS } from "./layout.js";
 
-export const WORLD_SIZE = 400;
+export const WORLD_SIZE = 440;
 export const GRID = 501;
 export const SEA_FLOOR = -9;
 export const BEACH_TOP = 1.9;
@@ -89,10 +89,9 @@ export function createTerrain() {
 
   const spawn = { x: 6, z: 16 };
   const dockCoast = findCoast(spawn.x, spawn.z, 0.12, 1);
-  const lighthouseCoast = findCoast(spawn.x, spawn.z, 0.75, 0.85);
   const lighthouse = {
-    x: lighthouseCoast.x - lighthouseCoast.ux * 5,
-    z: lighthouseCoast.z - lighthouseCoast.uz * 5,
+    x: 50.1,
+    z: 47.44,
   };
   const mountain = { x: -26, z: -30 };
   const dock = {
@@ -127,7 +126,7 @@ export function createTerrain() {
     makePath(spawn, lighthouse, 4.7),
   ];
 
-  const dockRoad = { x: dockCoast.x - dockCoast.ux * 5, z: dockCoast.z - dockCoast.uz * 5 };
+  const dockRoad = { x: spawn.x + (dockCoast.x - spawn.x) * 0.62, z: spawn.z + (dockCoast.z - spawn.z) * 0.62 };
   const roadStarts = { spawn, lighthouse, mountain: northRoadEnd, west: spawn, dock: dockRoad };
   let bridge = null;
   const areas = AREAS.map((definition, index) => {
@@ -183,6 +182,12 @@ export function createTerrain() {
     return { minX: Math.min(...xs) - 8, maxX: Math.max(...xs) + 8, minZ: Math.min(...zs) - 8, maxZ: Math.max(...zs) + 8 };
   });
 
+  const gardenArea = areas.find((a) => a.id === "garden");
+  const gardenScale = 1.25;
+  const gardenRy = gardenArea ? Math.atan2(-gardenArea.direction.x, -gardenArea.direction.z) : 0;
+  const gardenCos = Math.cos(gardenRy);
+  const gardenSin = Math.sin(gardenRy);
+
   const heights = new Float32Array(count);
   const pathMask = new Float32Array(count);
   for (let j = 0; j < GRID; j++) {
@@ -200,13 +205,37 @@ export function createTerrain() {
           distance = Math.min(distance, distanceToSegment(x, z, path[p].x, path[p].z, path[p + 1].x, path[p + 1].z));
         }
       }
-      const onPath = r > 0.4 ? 1 - smoothstep(1.6, 3.4, distance) : 0;
-      const roadBlend = 1 - smoothstep(2.5, 6.5, distance);
+      const onPath = r > 0.4 ? 1 - smoothstep(1.8, 3.6, distance) : 0;
+      const roadBlend = 1 - smoothstep(4.5, 10.0, distance);
       let h = lerp(terrace(r), r, r > 0.4 ? roadBlend : 0);
       for (const zone of zones) {
         const d = Math.hypot(x - zone.x, z - zone.z);
         const w = 1 - smoothstep(zone.radius, zone.radius + zone.fade, d);
         h = lerp(h, zone.height, w);
+      }
+      if (gardenArea) {
+        const gdx = (x - gardenArea.x) / gardenScale;
+        const gdz = (z - gardenArea.z) / gardenScale;
+        const lx = gdx * gardenCos - gdz * gardenSin;
+        const lz = gdx * gardenSin + gdz * gardenCos;
+        // Carve a large, organic, natural lagoon around the Lotus Garden (no square edges!)
+        const noiseWarp =
+          hillNoise(x * 0.065 + 19, z * 0.065 - 11) * 0.18 +
+          hillNoise(x * 0.14 - 7, z * 0.14 + 5) * 0.08;
+        const ellipDist = Math.hypot(lx / 19.5, (lz - 1.2) / 15.5) + noiseWarp;
+        let pondMask = 1 - smoothstep(0.68, 1.02, ellipDist);
+        if (pondMask > 0) {
+          // Keep a natural rounded dry-land peninsula where the road meets the foreground bridge
+          const bridgeRampDist = Math.hypot((lx - 6.2) / 4.2, (lz - 11.8) / 3.8);
+          const arrivalDist = Math.hypot(lx / 5.8, (lz - 16.0) / 4.8);
+          const keepDry = Math.max(
+            1 - smoothstep(0.62, 1.05, bridgeRampDist),
+            1 - smoothstep(0.62, 1.05, arrivalDist),
+            onPath * smoothstep(9.0, 12.2, lz)
+          );
+          pondMask *= 1 - Math.min(1, keepDry);
+          h = lerp(h, -2.65, pondMask);
+        }
       }
       heights[index] = h;
       pathMask[index] = onPath;

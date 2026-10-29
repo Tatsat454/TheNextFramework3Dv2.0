@@ -108,6 +108,50 @@ export function createVegetation({ terrain, random, colliders, avoid }) {
     bushes.push(entry);
   }
 
+  // Add curated non-overlapping Lotus Garden trees, pines & bushes using the existing codebase vegetation!
+  const gardenArea = terrain.features?.areas?.find((a) => a.id === "garden");
+  if (gardenArea) {
+    const S = 1.25;
+    const ry = Math.atan2(-gardenArea.direction.x, -gardenArea.direction.z);
+    const cosRy = Math.cos(ry);
+    const sinRy = Math.sin(ry);
+    const toWorld = (lx, ly, lz) => ({
+      x: gardenArea.x + S * (lx * cosRy + lz * sinRy),
+      y: S * ly,
+      z: gardenArea.z + S * (-lx * sinRy + lz * cosRy),
+    });
+
+    for (const [lx, ly, lz, scale] of [
+      [-5.2, 3.22, -9.6, 1.05],
+      [5.2, 3.22, -9.6, 1.05],
+    ]) {
+      const pos = toWorld(lx, ly, lz);
+      trees.push({ ...pos, scale, rotation: random() * Math.PI * 2 });
+    }
+
+    for (const [lx, ly, lz, scale] of [
+      [-7.4, 3.22, -7.8, 0.92],
+      [7.4, 3.22, -7.8, 0.92],
+      [-7.2, 3.22, -10.0, 1.02],
+      [7.2, 3.22, -10.0, 1.02],
+    ]) {
+      const pos = toWorld(lx, ly, lz);
+      pines.push({ ...pos, scale, rotation: random() * Math.PI * 2 });
+    }
+
+    for (const [lx, ly, lz, scale] of [
+      [-3.3, 3.22, -4.1, 0.68],
+      [3.3, 3.22, -4.1, 0.68],
+      [-6.8, 1.72, -3.1, 0.62],
+      [6.8, 1.72, -3.1, 0.62],
+      [-6.8, 1.72, 2.9, 0.62],
+      [6.8, 1.72, 2.9, 0.62],
+    ]) {
+      const pos = toWorld(lx, ly, lz);
+      bushes.push({ ...pos, scale, rotation: random() * Math.PI * 2 });
+    }
+  }
+
   const dummy = new THREE.Object3D();
   const leafTexture = createLeafTexture(random);
 

@@ -133,18 +133,26 @@ export function createFollowCamera(camera, domElement) {
       smoothedFocus.copy(target);
     },
     update(dt, target, heading, velocity, options = {}) {
-      lookAhead.set(velocity.x * 0.32, 0, velocity.y * 0.32);
-      lookAhead.clampLength(0, 7);
+      lookAhead.set(velocity.x * (options.indoor ? 0.14 : 0.32), 0, velocity.y * (options.indoor ? 0.14 : 0.32));
+      lookAhead.clampLength(0, options.indoor ? 2.2 : 7);
       focus.copy(target).add(lookAhead);
-      focus.y += options.soar ? 0.4 : 1.2;
-      smoothedFocus.x = damp(smoothedFocus.x, focus.x, 5, dt);
-      smoothedFocus.y = damp(smoothedFocus.y, focus.y, 3, dt);
-      smoothedFocus.z = damp(smoothedFocus.z, focus.z, 5, dt);
+      focus.y += options.indoor ? 1.65 : options.soar ? 0.4 : 1.2;
+      smoothedFocus.x = damp(smoothedFocus.x, focus.x, options.indoor ? 9 : 5, dt);
+      smoothedFocus.y = damp(smoothedFocus.y, focus.y, options.indoor ? 7 : 3, dt);
+      smoothedFocus.z = damp(smoothedFocus.z, focus.z, options.indoor ? 9 : 5, dt);
 
       let theta;
       let phi;
       let radius;
-      if (options.soar) {
+      if (options.indoor) {
+        state.theta = damp(state.theta, state.targetTheta, 8, dt);
+        state.phi = damp(state.phi, THREE.MathUtils.clamp(state.targetPhi, 0.92, 1.38), 8, dt);
+        const indoorTargetRadius = THREE.MathUtils.clamp(state.targetRadius * 0.34, 5.5, 11.5);
+        state.radius = damp(state.radius, indoorTargetRadius, 8, dt);
+        theta = state.theta;
+        phi = state.phi;
+        radius = state.radius;
+      } else if (options.soar) {
         // UFO: free mouse orbit (pointer-lock or drag)
         state.theta = damp(state.theta, state.targetTheta, 8, dt);
         state.phi = damp(state.phi, state.targetPhi, 8, dt);
@@ -181,6 +189,11 @@ export function createFollowCamera(camera, domElement) {
       state.viewTheta = theta;
       offset.setFromSphericalCoords(radius, phi, theta);
       camera.position.copy(smoothedFocus).add(offset);
+      if (options.indoor) {
+        camera.position.x = THREE.MathUtils.clamp(camera.position.x, -13.6, 13.6);
+        camera.position.z = THREE.MathUtils.clamp(camera.position.z, -16.8, 16.8);
+        camera.position.y = THREE.MathUtils.clamp(camera.position.y, 1.4, 11.8);
+      }
 
       state.shake = damp(state.shake, 0, 5, dt);
       if (state.shake > 0.01) {

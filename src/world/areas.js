@@ -1,10 +1,21 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createGlows } from "./props.js";
 import { createSocialLogos, loadSocialTemplate } from "./socials.js";
 import { createStoneGolem, loadGolemTemplate } from "./golem.js";
+import { createTempleOfTribulations, loadTempleTemplate } from "./temple.js";
 import { createEmissiveMaterial, createSolidMaterial, createStylizedMaterial, flatten, shared } from "./shading.js";
+
+let cachedLotusGarden = null;
+async function loadLotusGardenTemplate() {
+  if (cachedLotusGarden) return cachedLotusGarden;
+  const loader = new GLTFLoader();
+  const gltf = await loader.loadAsync("/lotus-garden.glb");
+  cachedLotusGarden = gltf.scene;
+  return cachedLotusGarden;
+}
 
 const TAU = Math.PI * 2;
 const dummy = new THREE.Object3D();
@@ -202,80 +213,44 @@ function createStonesDecor(area, heightAt, colliders, particles, assets) {
   };
 }
 
-function createIsleDecor(area, heightAt, colliders) {
+function createIsleDecor(area, heightAt, colliders, _particles, assets) {
   const group = new THREE.Group();
-  const entranceAngle = Math.atan2(-area.direction.z, -area.direction.x);
-  let best = { angle: entranceAngle + Math.PI, height: -Infinity };
-  for (let i = 0; i < 24; i++) {
-    const angle = (i / 24) * TAU;
-    if (angleDistance(angle, entranceAngle) < 1.2) continue;
-    const h = heightAt(area.x + Math.cos(angle) * (area.radius + 5), area.z + Math.sin(angle) * (area.radius + 5));
-    if (h > best.height) best = { angle, height: h };
-  }
-  const outside = best.height > area.y - 2.5;
-  const observatoryDistance = outside ? area.radius + 5 : area.radius - 4;
-  const ox = area.x + Math.cos(best.angle) * observatoryDistance;
-  const oz = area.z + Math.sin(best.angle) * observatoryDistance;
-  const oy = outside ? Math.min(area.y, heightAt(ox, oz)) : area.y;
-  const observatory = new THREE.Group();
-  observatory.position.set(ox, oy, oz);
-  observatory.rotation.y = -best.angle - Math.PI / 2;
-  const base = new THREE.Mesh(flatten(new THREE.CylinderGeometry(3.3, 3.5, 4.2, 14)), createSolidMaterial("#f4efe6"));
-  base.position.y = 2.1;
-  const band = new THREE.Mesh(flatten(new THREE.CylinderGeometry(3.42, 3.42, 0.35, 14)), createSolidMaterial(area.color));
-  band.position.y = 4.1;
-  const dome = new THREE.Mesh(flatten(new THREE.SphereGeometry(3.25, 14, 8, 0, TAU, 0, Math.PI / 2)), createSolidMaterial("#c9cde8"));
-  dome.position.y = 4.2;
-  const slit = new THREE.Mesh(new THREE.BoxGeometry(0.9, 3.2, 3.4), createSolidMaterial("#2c2f52"));
-  slit.position.set(0, 5.6, 1.4);
-  slit.rotation.x = -0.6;
-  const telescope = new THREE.Mesh(flatten(new THREE.CylinderGeometry(0.42, 0.55, 4.2, 10)), createSolidMaterial("#e6e8f5"));
-  telescope.position.set(0, 6.6, 2.0);
-  telescope.rotation.x = 0.9;
-  const door = new THREE.Mesh(new RoundedBoxGeometry(1.4, 2.4, 0.3, 2, 0.1), createSolidMaterial("#5a4a7a"));
-  door.position.set(0, 1.2, 3.4);
-  observatory.add(base, band, dome, slit, telescope, door);
-  observatory.traverse((child) => {
-    if (child.isMesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
-    }
+  let pendingTransition = null;
+  const temple = createTempleOfTribulations(area, heightAt, colliders, assets.temple, (stateEvent) => {
+    pendingTransition = stateEvent;
   });
-  group.add(observatory);
-  colliders.push({ x: ox, z: oz, radius: 3.8 });
-
-  const postParts = [];
-  const orbParts = [];
-  const orbPoints = [];
-  for (let i = 0; i < 8; i++) {
-    const angle = entranceAngle + ((i + 0.5) / 8) * TAU;
-    if (angleDistance(angle, best.angle) < 0.45) continue;
-    const x = area.x + Math.cos(angle) * (area.radius + 1.4);
-    const z = area.z + Math.sin(angle) * (area.radius + 1.4);
-    const y = heightAt(x, z);
-    postParts.push(placed(new THREE.CylinderGeometry(0.1, 0.14, 2.8, 6), { x, y: y + 1.4, z }));
-    orbParts.push(placed(new THREE.IcosahedronGeometry(0.36, 1), { x, y: y + 3.05, z }));
-    orbPoints.push(new THREE.Vector3(x, y + 3.05, z));
-    colliders.push({ x, z, radius: 0.3 });
-  }
-  group.add(mergedMesh(postParts, createSolidMaterial("#3d3a55")));
-  group.add(mergedMesh(orbParts, createEmissiveMaterial("#bff2ff"), { cast: false }));
-  group.add(createGlows(orbPoints, { color: area.color, size: 520 }));
+  group.add(temple.group);
 
   const stars = [];
   const starMaterial = createEmissiveMaterial("#fff2a8");
   const starGeometry = flatten(new THREE.OctahedronGeometry(0.4, 0));
-  for (let i = 0; i < 7; i++) {
-    const angle = (i / 7) * TAU + 0.4;
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * TAU + 0.4;
     const star = new THREE.Mesh(starGeometry, starMaterial);
     star.scale.set(1, 1.6, 1);
     group.add(star);
-    stars.push({ star, angle, radius: 6 + (i % 3) * 3, height: area.y + 6 + (i % 2) * 2 });
+    stars.push({ star, angle, radius: 19 + (i % 3) * 2.5, height: area.y + 14 + (i % 2) * 2.5 });
   }
 
   return {
     group,
-    update(time) {
+    dungeonGroup: temple.dungeonGroup,
+    surface: temple.surface,
+    isInsideDungeon: () => temple.isInsideDungeon(),
+    updateDungeonPlayer: (dt, input, cameraHeading) => temple.updateDungeonPlayer(dt, input, cameraHeading),
+    takeOpened: () => temple.takeOpened(),
+    openPrompt: () => temple.openPrompt(),
+    socialState: () => temple.socialState(),
+    talk: () => temple.talk(),
+    talkState: () => temple.talkState(),
+    exitHall: () => temple.exitHall(),
+    takeTeleport() {
+      const val = pendingTransition;
+      pendingTransition = null;
+      return val;
+    },
+    update(time, dt, _near, car, camera) {
+      temple.update(time, dt, car, camera);
       for (const s of stars) {
         const a = s.angle + time * 0.15;
         s.star.position.set(area.x + Math.cos(a) * s.radius, s.height + Math.sin(time * 1.2 + s.angle * 3) * 0.6, area.z + Math.sin(a) * s.radius);
@@ -671,71 +646,188 @@ function createMarketDecor(area, heightAt, colliders) {
   };
 }
 
-function createGardenDecor(area, heightAt, colliders) {
-  const group = new THREE.Group();
-  const stone = createSolidMaterial("#efe8d8");
-  const water = createSolidMaterial("#7fe7ff");
-  const bowl = new THREE.Mesh(flatten(new THREE.CylinderGeometry(2.4, 2.7, 0.7, 16)), stone);
-  bowl.position.set(area.x, area.y + 0.45, area.z);
-  const pool = new THREE.Mesh(new THREE.CircleGeometry(2.05, 24), water);
-  pool.rotation.x = -Math.PI / 2;
-  pool.position.set(area.x, area.y + 0.82, area.z);
-  const column = new THREE.Mesh(flatten(new THREE.CylinderGeometry(0.35, 0.42, 1.6, 10)), stone);
-  column.position.set(area.x, area.y + 1.5, area.z);
-  const dish = new THREE.Mesh(flatten(new THREE.CylinderGeometry(1.1, 1.25, 0.28, 14)), stone);
-  dish.position.set(area.x, area.y + 2.3, area.z);
-  const jet = new THREE.Mesh(flatten(new THREE.ConeGeometry(0.18, 1.1, 8)), createEmissiveMaterial("#d8fbff"));
-  jet.position.set(area.x, area.y + 3.05, area.z);
-  group.add(bowl, pool, column, dish, jet);
-  colliders.push({ x: area.x, z: area.z, radius: 2.6 });
+// Exact Blender (X, Y, Z) coordinates of all 23 stone lanterns in public/lotus-garden.glb
+const LOTUS_LANTERNS_BLENDER = [
+  [-2.15, 1.6, 2.69],
+  [-2.15, 4.3, 4.64],
+  [2.15, 1.6, 2.69],
+  [2.15, 4.3, 4.64],
+  [-6.0, -3.5, 3.14],
+  [-6.0, 3.6, 3.14],
+  [-5.6, 4.6, 4.64],
+  [6.0, -3.5, 3.14],
+  [6.0, 3.6, 3.14],
+  [5.6, 4.6, 4.64],
+  [0.0, 7.2, 4.36],
+  [-9.2, 0.2, 2.54],
+  [9.2, 0.2, 2.54],
+  [8.19, -9.01, 2.09],
+  [3.58, -7.51, 2.09],
+  [7.41, -11.39, 2.09],
+  [2.8, -9.89, 2.09],
+  [-0.11, -6.31, 2.72],
+  [-0.89, -8.69, 2.72],
+  [-3.8, -5.11, 3.4],
+  [-4.58, -7.49, 3.4],
+  [-7.49, -3.91, 2.09],
+  [-8.26, -6.29, 2.09],
+];
 
-  const hedgeParts = [];
-  const flowerParts = { pink: [], gold: [], lilac: [] };
-  const palettes = [
-    { key: "pink", color: "#ff7eb6" },
-    { key: "gold", color: "#ffd23f" },
-    { key: "lilac", color: "#c77dff" },
-  ];
-  for (let ring = 0; ring < 3; ring++) {
-    const radius = 5.2 + ring * 2.8;
-    const count = 10 + ring * 6;
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * TAU + ring * 0.2;
-      const x = area.x + Math.cos(angle) * radius;
-      const z = area.z + Math.sin(angle) * radius;
-      if (ring === 2 && angleDistance(angle, Math.atan2(-area.direction.z, -area.direction.x)) < 0.35) continue;
-      hedgeParts.push(placed(new THREE.SphereGeometry(0.55 + ring * 0.08, 7, 5), { x, y: area.y + 0.45, z, sy: 0.7 }));
-      const bloom = palettes[(i + ring) % palettes.length];
-      flowerParts[bloom.key].push(placed(new THREE.SphereGeometry(0.22, 6, 5), { x: x + Math.cos(angle + 0.2) * 0.7, y: area.y + 0.38, z: z + Math.sin(angle + 0.2) * 0.7 }));
-    }
-  }
-  group.add(mergedMesh(hedgeParts, createSolidMaterial("#5fb342")));
-  group.add(mergedMesh(flowerParts.pink, createSolidMaterial("#ff7eb6")));
-  group.add(mergedMesh(flowerParts.gold, createSolidMaterial("#ffd23f")));
-  group.add(mergedMesh(flowerParts.lilac, createSolidMaterial("#c77dff")));
-  group.add(createGlows([new THREE.Vector3(area.x, area.y + 3.1, area.z)], { color: "#e8fbff", size: 700, day: 0.2 }));
-
-  const lanterns = [];
-  for (let i = 0; i < 6; i++) {
-    const angle = (i / 6) * TAU;
-    const x = area.x + Math.cos(angle) * (area.radius - 1.8);
-    const z = area.z + Math.sin(angle) * (area.radius - 1.8);
-    lanterns.push(new THREE.Vector3(x, heightAt(x, z) + 2.4, z));
-    colliders.push({ x, z, radius: 0.28 });
-  }
-  group.add(createGlows(lanterns, { color: area.color, size: 420 }));
-  group.traverse((child) => {
-    if (child.isMesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
-    }
+function createLotusLampMaterial(hexColor, lampPositions, { metallic = false } = {}) {
+  return createStylizedMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(hexColor) },
+      uLampPositions: { value: lampPositions },
+      uMetallic: { value: metallic ? 1.0 : 0.0 },
+    },
+    fragmentPars: /* glsl */ `
+      uniform vec3 uColor;
+      uniform vec3 uLampPositions[23];
+      uniform float uMetallic;
+    `,
+    fragmentMain: /* glsl */ `
+      vec3 base = stylize(uColor, normal, vWorldPosition, 0.0, shadowMask);
+      vec3 lampLight = vec3(0.0);
+      for (int i = 0; i < 23; i++) {
+        vec3 lPos = uLampPositions[i];
+        vec3 toL = lPos - vWorldPosition;
+        float d = length(toL);
+        if (d < 6.4) {
+          float ndl = max(dot(normal, toL / max(d, 0.001)), 0.0) * 0.72 + 0.28;
+          float atten = pow(clamp(1.0 - d / 6.4, 0.0, 1.0), 1.85) * ndl + smoothstep(2.0, 0.18, d) * 0.72;
+          lampLight += vec3(1.0, 0.62, 0.18) * atten;
+        }
+      }
+      float lampStrength = mix(0.68, 1.18, uNight);
+      outColor = base + uColor * lampLight * lampStrength;
+      if (uMetallic > 0.5) {
+        vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+        vec3 halfVec = normalize(uSunDirection + viewDir);
+        float spec = pow(max(dot(normal, halfVec), 0.0), 24.0) * 0.42;
+        outColor += vec3(1.0, 0.86, 0.48) * spec;
+      }
+    `,
   });
+}
+
+function createGardenDecor(area, _heightAt, colliders, _particles, assets) {
+  const group = new THREE.Group();
+  const S = 1.25;
+  const ry = Math.atan2(-area.direction.x, -area.direction.z);
+  const cosRy = Math.cos(ry);
+  const sinRy = Math.sin(ry);
+
+  const toWorldXZ = (lx, lz) => ({
+    x: area.x + S * (lx * cosRy + lz * sinRy),
+    z: area.z + S * (-lx * sinRy + lz * cosRy),
+  });
+
+  // Compute exact world positions for all 23 lanterns so EVERY lamp emits its own light & halo
+  const lampWorldPositions = LOTUS_LANTERNS_BLENDER.map(([bx, by, bz]) => {
+    const lx = bx;
+    const ly = bz;
+    const lz = -by;
+    const { x, z } = toWorldXZ(lx, lz);
+    return new THREE.Vector3(x, S * ly, z);
+  });
+
+  const palette = {
+    Lotus_Marble_Cream: createLotusLampMaterial("#f3dec2", lampWorldPositions),
+    Lotus_Marble_Dark: createLotusLampMaterial("#d8be9c", lampWorldPositions),
+    Lotus_Slate_Roof: createLotusLampMaterial("#4c5c7a", lampWorldPositions, { metallic: true }),
+    Lotus_Gold_Trim: createLotusLampMaterial("#f2ad36", lampWorldPositions, { metallic: true }),
+    Lotus_Rock_Grey: createLotusLampMaterial("#7c7582", lampWorldPositions),
+    Lotus_Foliage_Dark: createLotusLampMaterial("#3a7d2c", lampWorldPositions),
+    Lotus_Foliage_Bright: createLotusLampMaterial("#68b836", lampWorldPositions),
+    Lotus_Cypress_Green: createLotusLampMaterial("#4d982c", lampWorldPositions),
+    Lotus_Pad_Green: createLotusLampMaterial("#63b43c", lampWorldPositions),
+    Lotus_Wood_Bark: createLotusLampMaterial("#7a4e2d", lampWorldPositions),
+    Lotus_Flower_Pink: createEmissiveMaterial("#ff82a8"),
+    Lotus_Flower_Core: createEmissiveMaterial("#ffd447"),
+    Lotus_Waterfall_Foam: createEmissiveMaterial("#d2f8ff"),
+    Lotus_Lantern_Glow: createEmissiveMaterial("#ffbe3b"),
+  };
+
+  if (assets?.lotusGarden) {
+    const gardenRoot = assets.lotusGarden.clone(true);
+    gardenRoot.position.set(area.x, 0, area.z);
+    gardenRoot.rotation.y = ry;
+    gardenRoot.scale.setScalar(S);
+    gardenRoot.traverse((child) => {
+      if (!child.isMesh) return;
+      child.geometry = flatten(child.geometry.clone());
+      const matKey = Object.keys(palette).find((k) => child.name.startsWith(k));
+      child.material = matKey ? palette[matKey] : palette.Lotus_Marble_Cream;
+      child.castShadow = !child.name.startsWith("Lotus_Lantern_Glow");
+      child.receiveShadow = true;
+    });
+    group.add(gardenRoot);
+  }
+
+  // Spawn an individual glowing light sprite at EVERY single one of the 23 lamps
+  group.add(createGlows(lampWorldPositions, { color: "#ffae2b", size: 420, day: 0.78 }));
+
+  // Colliders around the pavilions, upper terrace & pond perimeter (leaving the arched bridge open)
+  const localColliders = [
+    // Upper central rotunda & terrace
+    [0, -7.2, 4.5],
+    [-6.0, -7.2, 2.8],
+    [6.0, -7.2, 2.8],
+    // Left & right flanking pavilions
+    [-9.2, -0.2, 3.4],
+    [9.2, -0.2, 3.4],
+    // Waterfall cliff & boulders
+    [-4.2, -2.2, 2.2],
+    [0.0, -2.2, 2.2],
+    [4.2, -2.2, 2.2],
+    // Pond side banks
+    [-6.8, 2.2, 1.8],
+    [6.8, 2.5, 1.8],
+  ];
+  for (const [lx, lz, r] of localColliders) {
+    const { x, z } = toWorldXZ(lx, lz);
+    colliders.push({ x, z, radius: r * S });
+  }
+
+  // Walkable/driveable surface for the diagonal arched stone bridge across the lotus pond
+  const bStartX = 7.8;
+  const bStartZ = 10.2;
+  const bDx = -16.6;
+  const bDz = -5.4;
+  const bLenSq = bDx * bDx + bDz * bDz;
+  const bLen = Math.sqrt(bLenSq);
+  const bNx = -bDz / bLen;
+  const bNz = bDx / bLen;
+  for (const t of [0.05, 0.25, 0.5, 0.75, 0.95]) {
+    for (const side of [-1, 1]) {
+      const lx = bStartX + bDx * t + side * bNx * 1.35;
+      const lz = bStartZ + bDz * t + side * bNz * 1.35;
+      const { x, z } = toWorldXZ(lx, lz);
+      colliders.push({ x, z, radius: 0.45 });
+    }
+  }
+
+  const surface = (wx, wz) => {
+    const gdx = (wx - area.x) / S;
+    const gdz = (wz - area.z) / S;
+    const lx = gdx * cosRy - gdz * sinRy;
+    const lz = gdx * sinRy + gdz * cosRy;
+    const relX = lx - bStartX;
+    const relZ = lz - bStartZ;
+    const t = (relX * bDx + relZ * bDz) / bLenSq;
+    const across = Math.abs(relX * bNx + relZ * bNz);
+    if (t >= -0.04 && t <= 1.04 && across <= 1.35) {
+      const clampedT = Math.max(0, Math.min(1, t));
+      const archT = Math.max(0, Math.min(1, (clampedT - 0.42) / 0.52));
+      return S * (0.62 + Math.sin(archT * Math.PI) * 1.35);
+    }
+    return -Infinity;
+  };
+
   return {
     group,
-    update(time) {
-      jet.scale.y = 1 + Math.sin(time * 6) * 0.12;
-      jet.rotation.y = time * 2;
-    },
+    surface,
+    update() {},
   };
 }
 
@@ -822,10 +914,16 @@ function createBridge(bridge, heightAt, colliders) {
 
 export async function createAreas({ terrain, colliders, particles, camera }) {
   const group = new THREE.Group();
+  const dungeonGroup = new THREE.Group();
   const surfaces = [];
   const { features, heightAt } = terrain;
-  const [golem, socials] = await Promise.all([loadGolemTemplate(), loadSocialTemplate()]);
-  const assets = { golem, socials };
+  const [golem, socials, temple, lotusGarden] = await Promise.all([
+    loadGolemTemplate(),
+    loadSocialTemplate(),
+    loadTempleTemplate(),
+    loadLotusGardenTemplate(),
+  ]);
+  const assets = { golem, socials, temple, lotusGarden };
   const decorBuilders = {
     stones: createStonesDecor,
     isle: createIsleDecor,
@@ -833,11 +931,15 @@ export async function createAreas({ terrain, colliders, particles, camera }) {
     garden: createGardenDecor,
   };
   const built = features.areas.map((area) => {
-    group.add(createPad(area));
+    if (area.id !== "garden") group.add(createPad(area));
     const beacon = createBeacon(area);
     group.add(beacon.mesh);
     const decor = decorBuilders[area.id]?.(area, heightAt, colliders, particles, assets);
-    if (decor) group.add(decor.group);
+    if (decor) {
+      group.add(decor.group);
+      if (decor.dungeonGroup) dungeonGroup.add(decor.dungeonGroup);
+      if (decor.surface) surfaces.push(decor.surface);
+    }
     return { area, beacon, decor };
   });
 
@@ -849,8 +951,17 @@ export async function createAreas({ terrain, colliders, particles, camera }) {
 
   return {
     group,
+    dungeonGroup,
     surfaces,
     areas: features.areas,
+    isInsideDungeon() {
+      return built.some(({ decor }) => decor?.isInsideDungeon?.());
+    },
+    updateDungeonPlayer(dt, input, cameraHeading) {
+      for (const { decor } of built) {
+        decor?.updateDungeonPlayer?.(dt, input, cameraHeading);
+      }
+    },
     takeOpened() {
       for (const { decor } of built) {
         const opened = decor?.takeOpened?.();
@@ -880,6 +991,18 @@ export async function createAreas({ terrain, colliders, particles, camera }) {
         if (state) return state;
       }
       return null;
+    },
+    takeTeleport() {
+      for (const { decor } of built) {
+        const tp = decor?.takeTeleport?.();
+        if (tp) return tp;
+      }
+      return null;
+    },
+    exitHall() {
+      for (const { decor } of built) {
+        decor?.exitHall?.();
+      }
     },
     update(dt, time, carPosition) {
       let current = null;

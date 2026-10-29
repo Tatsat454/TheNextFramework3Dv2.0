@@ -29,12 +29,20 @@ function jitteredRock(random, detail) {
 function createRocks({ terrain, random, colliders, avoid }) {
   const group = new THREE.Group();
   const rocks = [];
-  const blocked = (x, z) => avoid.some((zone) => Math.hypot(x - zone.x, z - zone.z) < zone.radius);
+  const paths = terrain.features?.paths ?? [];
+  const blocked = (x, z, pad = 0) => avoid.some((zone) => Math.hypot(x - zone.x, z - zone.z) < zone.radius + pad);
+  const nearPath = (x, z, minDist) =>
+    paths.some((path) =>
+      path.some((pt) => Math.hypot(x - pt.x, z - pt.z) < minDist)
+    );
+  const tooClose = (x, z, scale) =>
+    rocks.some((r) => Math.hypot(x - r.x, z - r.z) < (r.scale + scale) * 1.45 + 0.8);
+
   for (let attempt = 0; attempt < 30000 && rocks.length < 520; attempt++) {
     const x = (random() - 0.5) * 370;
     const z = (random() - 0.5) * 370;
     const h = terrain.heightAt(x, z);
-    if (blocked(x, z) || terrain.pathAt(x, z) > 0.1) continue;
+    if (blocked(x, z, 2.0) || terrain.pathAt(x, z) > 0.02) continue;
     const slope = terrain.slopeAt(x, z);
     let scale = 0;
     if (h > -3.5 && h < -0.6 && random() < 0.06) scale = 1.6 + random() * 2.6;
@@ -42,8 +50,9 @@ function createRocks({ terrain, random, colliders, avoid }) {
     else if (h >= BEACH_TOP && slope > 0.32 && random() < 0.16) scale = 0.6 + random() * 1.1;
     else if (h >= BEACH_TOP && random() < 0.01) scale = 0.4 + random() * 0.6;
     if (!scale) continue;
+    if (blocked(x, z, scale * 1.5 + 2.5) || nearPath(x, z, scale * 1.4 + 4.8) || tooClose(x, z, scale)) continue;
     rocks.push({ x, z, y: h, scale, rotation: random() * Math.PI * 2, tilt: (random() - 0.5) * 0.5 });
-    if (scale > 0.7) colliders.push({ x, z, radius: scale * 0.85 });
+    if (scale > 0.7) colliders.push({ x, z, radius: scale * 0.85, height: h + scale * 1.1 });
   }
 
   const variants = [jitteredRock(random, 0), jitteredRock(random, 1)];
@@ -396,6 +405,7 @@ export function createProps({ terrain, random, colliders, avoid }) {
 
   const keepOut = [
     { x: features.spawn.x, z: features.spawn.z - 18, radius: 22 },
+    { x: features.lighthouse.x, z: features.lighthouse.z, radius: 8 },
     ...features.areas.map((area) => ({ x: area.x, z: area.z, radius: area.radius + 3 })),
   ];
   if (features.bridge) {

@@ -43,18 +43,21 @@ scene.add(sun, sun.target);
 scene.add(new THREE.AmbientLight(0xfff2dc, 0.42));
 
 const random = mulberry32(7);
+const islandRoot = new THREE.Group();
+scene.add(islandRoot);
+
 const terrain = createTerrain();
 const { features } = terrain;
-scene.add(terrain.mesh);
+islandRoot.add(terrain.mesh);
 
 const water = createWater();
-scene.add(water);
+islandRoot.add(water);
 
 const sky = createSky();
 scene.add(sky.mesh);
 
 const grass = createGrass();
-scene.add(grass.mesh);
+islandRoot.add(grass.mesh);
 
 const lettersOrigin = { x: features.spawn.x, z: features.spawn.z - 7 };
 const colliders = [];
@@ -66,20 +69,28 @@ const avoid = [
   ...features.areas.map((area) => ({ x: area.entrance.x, z: area.entrance.z, radius: 9 })),
 ];
 if (features.bridge) {
-  avoid.push({ ...features.bridge.a, radius: 7 }, { ...features.bridge.b, radius: 7 });
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10;
+    avoid.push({
+      x: features.bridge.a.x + (features.bridge.b.x - features.bridge.a.x) * t,
+      z: features.bridge.a.z + (features.bridge.b.z - features.bridge.a.z) * t,
+      radius: 9,
+    });
+  }
 }
 
 const particles = createParticles();
-scene.add(particles.points);
+islandRoot.add(particles.points);
 
 const props = createProps({ terrain, random, colliders, avoid });
-scene.add(props.group);
+islandRoot.add(props.group);
 
 const areas = await createAreas({ terrain, colliders, particles, camera });
-scene.add(areas.group);
+islandRoot.add(areas.group);
+scene.add(areas.dungeonGroup);
 
 const vegetation = createVegetation({ terrain, random, colliders, avoid });
-scene.add(vegetation.group);
+islandRoot.add(vegetation.group);
 
 const surfaces = [...props.surfaces, ...areas.surfaces];
 const groundHeight = (x, z) => {
@@ -89,9 +100,9 @@ const groundHeight = (x, z) => {
 };
 
 const letters = createLetters({ text: "FRAMEWORK", origin: lettersOrigin, heightAt: groundHeight });
-scene.add(letters.group);
+islandRoot.add(letters.group);
 
-scene.add(createFireflies({ terrain, random }));
+islandRoot.add(createFireflies({ terrain, random }));
 
 const vehicle = await createVehicle({
   spawn: { x: features.spawn.x + 2, z: features.spawn.z + 5 },
@@ -101,7 +112,7 @@ const vehicle = await createVehicle({
   colliders,
   particles,
 });
-scene.add(vehicle.group);
+islandRoot.add(vehicle.group);
 
 const follow = createFollowCamera(camera, canvas);
 follow.snap(vehicle.position);
@@ -145,7 +156,14 @@ const hud = {
   dialogueHint: document.querySelector("#dialogue-hint"),
   controls: document.querySelector("#controls"),
   controlsToggle: document.querySelector("#controls-toggle"),
+  exitDungeon: document.querySelector("#exit-dungeon"),
+  dungeonLoader: document.querySelector("#dungeon-loader"),
+  dungeonLoaderBar: document.querySelector("#dungeon-loader-bar"),
+  dungeonLoaderTitle: document.querySelector("#dungeon-loader-title"),
+  dungeonLoaderSub: document.querySelector("#dungeon-loader-sub"),
 };
+
+let activeHuman = null;
 
 const minimap = createMinimap({ canvas: document.querySelector("#minimap"), terrain, areas: areas.areas });
 const destinationList = document.querySelector("#destinations");
@@ -161,6 +179,7 @@ let rideToast = null;
 
 const spawnPoint = { x: features.spawn.x + 2, z: features.spawn.z + 5, heading: Math.PI };
 const travel = (index) => {
+  areas.exitHall?.();
   const area = areas.areas[index];
   const target = area
     ? { x: area.x - area.direction.x * (area.radius - 3), z: area.z - area.direction.z * (area.radius - 3), heading: Math.atan2(area.direction.x, area.direction.z) }
@@ -194,12 +213,12 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "KeyC") follow.toggleChase();
   if (event.code === "KeyT") cycles.skip();
   if (event.code === "KeyE") areas.talk();
-  if (event.code === "KeyV") {
+  if (event.code === "KeyV" && !areas.isInsideDungeon()) {
     rideToast = vehicle.cycleRide();
     follow.alignTo(vehicle.heading);
     follow.setFlyLook(vehicle.ride?.id === "ufo");
   }
-  if (event.code === "KeyL") vehicle.toggleLights();
+  if (event.code === "KeyL" && !areas.isInsideDungeon()) vehicle.toggleLights();
   const digit = /^Digit([0-4])$/.exec(event.code);
   if (digit) travel(Number(digit[1]) - 1);
 });
@@ -236,6 +255,80 @@ hud.toast.addEventListener("click", () => {
   const url = hud.toast.dataset.url;
   if (url) window.open(url, "_blank", "noopener,noreferrer");
 });
+hud.dialogue.addEventListener("click", () => {
+  areas.talk();
+});
+hud.exitDungeon?.addEventListener("click", () => {
+  areas.exitHall();
+});
+
+const runDungeonTransition = (transition) => {
+  if (!hud.dungeonLoader) {
+    applyWorldSwitch(transition);
+    return;
+  }
+  if (hud.dungeonLoaderTitle) {
+    hud.dungeonLoaderTitle.textContent = transition.inDungeon
+      ? "Temple of Tribulations"
+      : "Returning to Island";
+  }
+  if (hud.dungeonLoaderSub) {
+    hud.dungeonLoaderSub.textContent = transition.inDungeon
+      ? "Summoning Research Sanctuary & Human Form…"
+      : "Restoring Island World & Vehicle…";
+  }
+  if (hud.dungeonLoaderBar) hud.dungeonLoaderBar.style.width = "12%";
+  hud.dungeonLoader.classList.add("is-active");
+  hud.dungeonLoader.setAttribute("aria-hidden", "false");
+
+  setTimeout(() => {
+    if (hud.dungeonLoaderBar) hud.dungeonLoaderBar.style.width = "72%";
+    applyWorldSwitch(transition);
+  }, 180);
+
+  setTimeout(() => {
+    if (hud.dungeonLoaderBar) hud.dungeonLoaderBar.style.width = "100%";
+  }, 460);
+
+  setTimeout(() => {
+    hud.dungeonLoader.classList.remove("is-active");
+    hud.dungeonLoader.setAttribute("aria-hidden", "true");
+    if (hud.dungeonLoaderBar) hud.dungeonLoaderBar.style.width = "0%";
+  }, 680);
+};
+
+const applyWorldSwitch = (transition) => {
+  shared.uIndoor.value = transition.inDungeon ? 1 : 0;
+  if (transition.inDungeon) {
+    islandRoot.visible = false;
+    transition.dungeonGroup.visible = true;
+    activeHuman = transition.human;
+    hud.exitDungeon?.classList.add("is-visible");
+    follow.setFlyLook(false);
+    follow.snap(activeHuman.position);
+    follow.alignTo(activeHuman.heading);
+    hud.toastEyebrow.textContent = "Sanctuary Dungeon · Human Form";
+    hud.toastName.textContent = "Temple of Tribulations";
+    hud.toastName.style.color = "#ffd23f";
+    hud.toastTagline.textContent = "Walk with WASD, Space to jump, R to sprint. Approach any of the 5 statues and press E or Click!";
+    hud.toast.classList.add("is-visible");
+    hud.toast.classList.remove("is-link", "has-progress", "is-story");
+    delete hud.toast.dataset.url;
+    delete hud.toast.dataset.live;
+    toastTimer = 5.5;
+  } else {
+    transition.dungeonGroup.visible = false;
+    islandRoot.visible = true;
+    activeHuman = null;
+    hud.exitDungeon?.classList.remove("is-visible");
+    if (transition.returnPose) {
+      vehicle.teleport(transition.returnPose.x, transition.returnPose.z, transition.returnPose.heading);
+    }
+    follow.snap(vehicle.position);
+    follow.alignTo(vehicle.heading);
+    follow.shake(0.3);
+  }
+};
 
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -258,38 +351,52 @@ function tick(now) {
 
   cycles.update(dt);
 
+  const inDungeon = areas.isInsideDungeon();
+
   if (started) {
-    const steps = dt > 1 / 50 ? 2 : 1;
-    const flying = vehicle.ride?.id === "ufo";
-    follow.setFlyLook(flying);
-    const look = {
-      heading: follow.lookHeading(),
-      turnCamera: (delta) => follow.nudgeYaw(delta),
-    };
-    for (let s = 0; s < steps; s++) {
-      vehicle.update(dt / steps, input, look);
+    if (inDungeon) {
+      follow.setFlyLook(false);
+      areas.updateDungeonPlayer(dt, input, follow.lookHeading());
       input.reset = false;
+    } else {
+      const steps = dt > 1 / 50 ? 2 : 1;
+      const flying = vehicle.ride?.id === "ufo";
+      follow.setFlyLook(flying);
+      const look = {
+        heading: follow.lookHeading(),
+        turnCamera: (delta) => follow.nudgeYaw(delta),
+      };
+      for (let s = 0; s < steps; s++) {
+        vehicle.update(dt / steps, input, look);
+        input.reset = false;
+      }
+      if (vehicle.state.impact > 4) follow.shake(vehicle.state.impact * 0.035);
+      const letterImpact = letters.collide(vehicle.position, vehicle.velocity, vehicle.radius);
+      if (letterImpact > 3) follow.shake(letterImpact * 0.03);
     }
-    if (vehicle.state.impact > 4) follow.shake(vehicle.state.impact * 0.035);
-    const letterImpact = letters.collide(vehicle.position, vehicle.velocity, vehicle.radius);
-    if (letterImpact > 3) follow.shake(letterImpact * 0.03);
   }
-  letters.update(dt);
-  particles.update(dt);
-  props.update(dt, elapsed, shared.uNight.value);
+  if (!inDungeon) {
+    letters.update(dt);
+    particles.update(dt);
+    props.update(dt, elapsed, shared.uNight.value);
+  }
   const area = areas.update(dt, elapsed, vehicle.position);
+  const transition = started ? areas.takeTeleport?.() : null;
+  if (transition) {
+    runDungeonTransition(transition);
+  }
   const opened = started ? areas.takeOpened() : null;
   const prompt = started ? areas.socialState() : null;
   const talk = started ? areas.talkState() : null;
   if (talk) {
     hud.dialogueName.textContent = talk.name;
     hud.dialogueLine.textContent = talk.prompt ? "" : talk.line;
-    hud.dialogueHint.textContent = "E to talk";
+    hud.dialogueHint.textContent = talk.hint || "E to talk";
     hud.dialogue.classList.add("is-visible");
   } else {
     hud.dialogue.classList.remove("is-visible");
   }
-  if (area !== currentArea) {
+  if (area !== currentArea && !inDungeon) {
     currentArea = area;
     for (const row of destinationList.children) row.classList.toggle("is-here", currentArea?.id === row.dataset.id);
     if (area && started && !opened && !prompt) {
@@ -336,7 +443,7 @@ function tick(now) {
     toastTimer = opened.blocked ? 6 : 2.6;
     follow.setBlockLock(true);
   } else if (prompt) {
-    hud.toastEyebrow.textContent = "Click the box to open";
+    hud.toastEyebrow.textContent = "Click the box or press E to open";
     hud.toastName.textContent = prompt.name;
     hud.toastName.style.color = prompt.color;
     hud.toastTagline.textContent = prompt.bio || "Opens in a new tab";
@@ -366,13 +473,17 @@ function tick(now) {
     if (t >= 1) revealTime = -1;
   }
 
-  follow.update(dt, vehicle.position, vehicle.heading, vehicle.velocity, { soar: vehicle.ride?.id === "ufo" });
+  const activeTarget = inDungeon && activeHuman ? activeHuman : vehicle;
+  follow.update(dt, activeTarget.position, activeTarget.heading, activeTarget.velocity, {
+    soar: !inDungeon && vehicle.ride?.id === "ufo",
+    indoor: inDungeon,
+  });
   sky.mesh.position.copy(camera.position);
 
-  carPoint.copy(vehicle.position);
-  grass.update(carPoint, carPoint);
+  carPoint.copy(activeTarget.position);
+  if (!inDungeon) grass.update(carPoint, carPoint);
   sunOffset.copy(shared.uSunDirection.value).multiplyScalar(140);
-  sun.target.position.set(Math.round(carPoint.x), 0, Math.round(carPoint.z));
+  sun.target.position.set(Math.round(carPoint.x), Math.round(carPoint.y), Math.round(carPoint.z));
   sun.position.copy(sun.target.position).add(sunOffset);
 
   const label = cycles.name;
@@ -380,13 +491,16 @@ function tick(now) {
     timeLabel = label;
     hud.time.textContent = label;
   }
-  const speed = `${Math.round(vehicle.speed * 3.6)}`;
+  const speedVal = inDungeon && activeHuman ? activeHuman.speed : vehicle.speed;
+  const speed = `${Math.round(speedVal * 3.6)}`;
   if (speed !== speedLabel) {
     speedLabel = speed;
     hud.speed.textContent = speed;
   }
 
-  minimap.draw(vehicle.position, vehicle.heading, 0, currentArea);
+  if (!inDungeon) {
+    minimap.draw(vehicle.position, vehicle.heading, 0, currentArea);
+  }
 
   renderer.render(scene, camera);
   requestAnimationFrame(tick);

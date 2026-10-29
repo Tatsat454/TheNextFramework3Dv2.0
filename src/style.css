@@ -330,7 +330,112 @@ h1 span {
 
 .dialogue.is-visible {
   opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
   transform: translate(-50%, 0) scale(1);
+}
+
+.dialogue.is-visible:hover {
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.exit-dungeon {
+  top: 18px;
+  left: 18px;
+  border: 0;
+  color: #1c3f7a;
+  background: rgba(255, 245, 220, 0.88);
+  box-shadow: 0 10px 28px rgba(28, 63, 122, 0.25), inset 0 0 0 1.5px #e8ad3a;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.exit-dungeon:hover {
+  background: #fff9eb;
+}
+
+.dungeon-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 45%, #1c3f7a 0%, #0d1b38 75%, #070e1f 100%);
+  color: #f3e5ce;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.32s ease, visibility 0.32s ease;
+}
+
+.dungeon-loader.is-active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.dungeon-loader-card {
+  text-align: center;
+  padding: 40px 48px;
+  border-radius: 28px;
+  background: rgba(19, 43, 86, 0.72);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55), inset 0 0 0 1.5px rgba(232, 173, 58, 0.55);
+  max-width: min(480px, calc(100vw - 32px));
+}
+
+.dungeon-loader-emblem {
+  font-size: 42px;
+  line-height: 1;
+  color: #e8ad3a;
+  margin-bottom: 10px;
+  animation: spin-star 3.2s linear infinite;
+}
+
+@keyframes spin-star {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dungeon-loader-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #e8ad3a;
+}
+
+.dungeon-loader-title {
+  margin: 6px 0 8px;
+  font-size: 32px;
+  font-weight: 900;
+  color: #fff6e5;
+}
+
+.dungeon-loader-sub {
+  margin: 0 0 20px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #bdd2f7;
+}
+
+.dungeon-loader-track {
+  width: 240px;
+  height: 8px;
+  margin: 0 auto;
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.dungeon-loader-track i {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #e8ad3a, #ffe28a);
+  transition: width 0.15s ease-out;
 }
 
 .dialogue p {
