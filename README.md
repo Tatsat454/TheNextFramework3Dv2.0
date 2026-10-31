@@ -48,8 +48,10 @@ Inspired by [Bruno Simon](https://bruno-simon.com). Built with Three.js, Vite, a
 
 ### Vehicles (`V` to cycle)
 - **Kart** — the main ride. Boost with Shift, jump with Space, respawn with `R`.
-- **F1** — faster chassis, rain light on `L`.
 - **UFO** — full air mode: mouse look, sonic boom, somersault, loop, and a light beam.
+
+### Mobile (Bruno Simon–style)
+On touch devices: left **joystick** steers, right buttons **boost / accelerate / brake / jump**, plus **V** (swap ride) and **E** (interact).
 
 ### Research Sanctuary (Temple)
 Enter on the temple pad with **E** / toast click. Leave with **Esc**.
@@ -76,10 +78,9 @@ Claw machines and air hockey are décor for now. More cabinets later.
 ### Music player
 Island playlist loops from the menu (Epidemic Sound tracks):
 
-1. Ambient Movements — Elm Lake
-2. Balderdash — Martin Klem
-3. Solitude — DonVayei
-4. Tiny Pockets — The Fly Guy Five
+1. Balderdash — Martin Klem
+2. Solitude — DonVayei
+3. Tiny Pockets — The Fly Guy Five
 
 Controls: ▶ / ⏸ · ⏹ · ↻ · ⏭ — centered in the Island Menu. Music starts when you hit **Start the engine**.
 
@@ -99,22 +100,22 @@ Sam protects the links at Stone Circle. Talk with **E**. Pedestals open:
 | Input | Action |
 |-------|--------|
 | Enter / Start | Begin the island + music |
-| `V` | Cycle Kart → F1 → UFO |
+| `V` | Cycle Kart → UFO |
 | `C` | Chase camera |
 | `T` / Day chip | Skip day / night phase |
 | `E` / Click | Talk, enter halls, open links |
 | `Esc` | Close menu / leave hall / leave cabinet |
 | `1`–`4` / `0` | Travel to areas / home |
 
-### Land (Kart / F1)
+### Land (Kart)
 | Input | Action |
 |-------|--------|
 | `W` `A` `S` `D` | Drive |
 | Shift | Boost |
 | Space | Jump |
 | `R` | Respawn |
-| `L` | F1 rain light |
 | Mouse drag | Orbit camera |
+| Touch stick / buttons | Mobile drive (phone / tablet) |
 
 ### Air (UFO)
 | Input | Action |

@@ -962,3 +962,137 @@ kbd {
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.5);
 }
+
+/* —— Bruno Simon–style mobile controls —— */
+.mobile-controls {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0.35s;
+}
+
+.mobile-controls.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.mobile-joystick {
+  pointer-events: auto;
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: min(170px, 42vw);
+  height: min(170px, 42vw);
+  border-radius: 50%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mobile-joystick-limit,
+.mobile-joystick-cursor {
+  position: absolute;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.mobile-joystick-limit {
+  top: 50%;
+  left: 50%;
+  width: 88%;
+  height: 88%;
+  transform: translate(-50%, -50%);
+  opacity: 0.28;
+  transition: opacity 0.15s ease;
+}
+
+.mobile-joystick-limit.is-active {
+  opacity: 0.55;
+}
+
+.mobile-joystick-cursor {
+  top: 50%;
+  left: 50%;
+  width: 36%;
+  height: 36%;
+  margin: -18% 0 0 -18%;
+  background: rgba(255, 255, 255, 0.18);
+  will-change: transform;
+}
+
+.mobile-actions {
+  pointer-events: none;
+  position: fixed;
+  right: 4px;
+  bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.mobile-btn {
+  pointer-events: auto;
+  position: relative;
+  width: 92px;
+  height: 66px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #fff;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+.mobile-btn-border {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56px;
+  height: 56px;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  box-sizing: border-box;
+  opacity: 0.28;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.mobile-btn.is-pressed .mobile-btn-border,
+.mobile-btn:active .mobile-btn-border {
+  opacity: 0.6;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.mobile-btn-icon {
+  position: relative;
+  z-index: 1;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+  line-height: 1;
+}
+
+.mobile-btn.is-boost .mobile-btn-icon {
+  font-size: 22px;
+  letter-spacing: -0.08em;
+}
+
+.mobile-btn.is-brake .mobile-btn-icon {
+  font-size: 14px;
+}
+
+@media (min-width: 900px) and (pointer: fine) {
+  .mobile-controls {
+    display: none;
+  }
+}

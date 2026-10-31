@@ -16,6 +16,7 @@ import { createCycles } from "./world/cycles.js";
 import { createAreas } from "./world/areas.js";
 import { createMinimap } from "./world/minimap.js";
 import { createMusicEngine } from "./world/music.js";
+import { createMobileControls } from "./world/mobileControls.js";
 
 const canvas = document.querySelector("#view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -121,7 +122,37 @@ const cycles = createCycles(sky);
 
 shared.uRevealCenter.value.set(vehicle.position.x, vehicle.position.z);
 
-const input = { forward: false, backward: false, left: false, right: false, boost: false, jump: false, down: false, somersault: false, loop: false, reset: false };
+const input = {
+  forward: false,
+  backward: false,
+  left: false,
+  right: false,
+  boost: false,
+  jump: false,
+  down: false,
+  somersault: false,
+  loop: false,
+  reset: false,
+  steerAxis: 0,
+};
+
+const cycleRideFromUi = () => {
+  if (!started || areas.isInsideDungeon()) return;
+  input.boost = false;
+  input.reset = false;
+  rideToast = vehicle.cycleRide();
+  follow.alignTo(vehicle.heading);
+  follow.setFlyLook(vehicle.ride?.id === "ufo");
+};
+
+const mobile = createMobileControls({
+  onCycleRide: () => cycleRideFromUi(),
+  onInteract: () => {
+    if (!started) return;
+    if (areas.openPrompt()) return;
+    areas.talk();
+  },
+});
 const keyMap = {
   KeyW: "forward",
   ArrowUp: "forward",
@@ -225,13 +256,7 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "KeyC") follow.toggleChase();
   if (event.code === "KeyT") cycles.skip();
   if (event.code === "KeyE") areas.talk();
-  if (event.code === "KeyV" && !areas.isInsideDungeon()) {
-    input.boost = false;
-    input.reset = false;
-    rideToast = vehicle.cycleRide();
-    follow.alignTo(vehicle.heading);
-    follow.setFlyLook(vehicle.ride?.id === "ufo");
-  }
+  if (event.code === "KeyV" && !areas.isInsideDungeon()) cycleRideFromUi();
   if (event.code === "KeyL" && !areas.isInsideDungeon()) vehicle.toggleLights();
   const digit = /^Digit([0-4])$/.exec(event.code);
   if (digit) travel(Number(digit[1]) - 1);
@@ -358,6 +383,7 @@ function start() {
   revealTime = 0;
   follow.startIntro();
   music.start().then(syncMusicButton);
+  mobile.show();
 }
 hud.start.addEventListener("click", start);
 hud.toast.addEventListener("click", () => {
@@ -476,11 +502,17 @@ function tick(now) {
   const inDungeon = areas.isInsideDungeon();
 
   if (started) {
+    input.steerAxis = 0;
     if (inDungeon) {
+      if (mobile.enabled) mobile.hide();
       follow.setFlyLook(false);
       areas.updateDungeonPlayer(dt, input, follow.lookHeading());
       input.reset = false;
     } else {
+      if (mobile.enabled) {
+        mobile.show();
+        mobile.applyTo(input);
+      }
       const steps = dt > 1 / 50 ? 2 : 1;
       const flying = vehicle.ride?.id === "ufo";
       follow.setFlyLook(flying);
@@ -539,9 +571,7 @@ function tick(now) {
     hud.toastTagline.textContent =
       rideToast.id === "ufo"
         ? "Mouse look, W camera-forward, S down, A/D turn. Shift sonic boom, L light"
-        : rideToast.id === "f1"
-          ? "WASD drive, Shift boost, R respawn, Space jump, L rain light"
-          : "WASD drive, Shift boost, R respawn, Space jump";
+        : "WASD drive, Shift boost, R respawn, Space jump — or use the on-screen stick";
     hud.toast.classList.add("is-visible");
     hud.toast.classList.remove("is-link", "has-progress", "is-story");
     delete hud.toast.dataset.url;

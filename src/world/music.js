@@ -1,7 +1,6 @@
 /** Island playlist — Epidemic Sound tracks, loops in order. */
 
 export const ISLAND_PLAYLIST = [
-  { id: "ambient-movements", title: "Ambient Movements", artist: "Elm Lake", file: "/music/ambient-movements.mp3" },
   { id: "balderdash", title: "Balderdash", artist: "Martin Klem", file: "/music/balderdash.mp3" },
   { id: "solitude", title: "Solitude", artist: "DonVayei", file: "/music/solitude.mp3" },
   { id: "tiny-pockets", title: "Tiny Pockets", artist: "The Fly Guy Five", file: "/music/tiny-pockets.mp3" },
