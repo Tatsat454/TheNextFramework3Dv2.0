@@ -64,7 +64,7 @@ export async function loadArcadeTemplate() {
   if (cachedArcadeAssets) return cachedArcadeAssets;
   const loader = new GLTFLoader();
   const [extGltf, intGltf] = await Promise.all([
-    loader.loadAsync("/arcade.glb"),
+    loader.loadAsync("/PS5_Arcade_Building.glb"),
     loader.loadAsync("/arcade-interior.glb"),
   ]);
   cachedArcadeAssets = {
@@ -167,11 +167,13 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
   const dungeonGroup = new THREE.Group();
   dungeonGroup.visible = false;
 
-  const EXT_SCALE = 1.15;
+  // New PS5 arcade is ~10.4×7.6 footprint (vs old ~22×19). Scale up so it fills the plaza
+  // without towering over the island skyline.
+  const EXT_SCALE = 1.85;
   // Lift the pavilion above the Market Row plaza pad so cream podium vs peach tiles don't flicker.
   const EXT_LIFT = 0.2;
-  const entranceVec = new THREE.Vector2(-area.direction.x, -area.direction.z).normalize();
-  const yaw = Math.atan2(-entranceVec.x, -entranceVec.y) + Math.PI;
+  // Facade / doors are authored facing +Z — aim that axis back down the approach road.
+  const yaw = Math.atan2(-area.direction.x, -area.direction.z);
   const cosY = Math.cos(yaw);
   const sinY = Math.sin(yaw);
 
@@ -219,10 +221,26 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
     Arcade_Coolant_Pink: createEmissiveMaterial("#ff6b9d"),
   };
 
+  // PS5_Arcade_Building.glb uses friendly material names; map them into the island palette.
+  const exteriorMaterialAliases = {
+    "Ice blue signage": "Arcade_Glow_Cyan",
+    "Graphite base": "Arcade_Slate_Dark",
+    "Ion blue neon": "Arcade_Glow_Cyan",
+    "Arcade magenta": "Arcade_Glow_Pink",
+    "Token gold": "Arcade_Gold_Trim",
+    "Cool white facet": "Arcade_Chrome",
+    "Midnight chassis": "Arcade_Royal_Slate",
+    "Vent metal": "Arcade_Chrome",
+    "Ceramic white": "Arcade_PS5_White",
+    "Smoked blue glazing": "Arcade_Glass",
+  };
+
   const resolveMaterial = (meshName, matName) => {
     const cleanMesh = (meshName || "").replace(/\.\d+$/, "");
     const cleanMat = (matName || "").replace(/\.\d+$/, "");
+    const aliased = exteriorMaterialAliases[cleanMat] || exteriorMaterialAliases[cleanMesh];
     return (
+      arcadeMaterials[aliased] ||
       arcadeMaterials[cleanMat] ||
       arcadeMaterials[cleanMesh] ||
       arcadeMaterials.Arcade_Marble_Cream
@@ -314,9 +332,12 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
   const styleModel = (root, { isInterior = false } = {}) => {
     root.traverse((child) => {
       if (!child.isMesh) return;
-      child.geometry = flatten(child.geometry.clone());
+      // Keep authored normals on the exterior PS5 shells — recomputing after flatten
+      // was flipping faces so one wall looked deleted from the plaza approach.
+      if (isInterior) child.geometry = flatten(child.geometry.clone());
+      else if (child.geometry.index) child.geometry = child.geometry.toNonIndexed();
       const check = `${child.name} ${child.material?.name || ""}`;
-      const isGlass = check.includes("Glass");
+      const isGlass = /Glass|glazing|Smoked/i.test(check);
       if (isGlass) {
         child.material = arcadeMaterials.Arcade_Glass;
         child.castShadow = false;
@@ -326,11 +347,13 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
         return;
       }
       child.material = resolveMaterial(child.name, child.material?.name);
+      if (!isInterior && child.material) {
+        child.material.side = THREE.DoubleSide;
+      }
       const isEmissive =
-        check.includes("Glow_") ||
-        check.includes("Torch_Flames") ||
-        check.includes("Coolant_") ||
-        check.includes("Screen");
+        /Glow_|Torch_Flames|Coolant_|Screen|Ion blue neon|Arcade magenta|Ice blue signage|Token gold/i.test(
+          check
+        );
       child.castShadow = !isInterior && !isEmissive;
       child.receiveShadow = !isEmissive;
       child.frustumCulled = false;
@@ -363,40 +386,49 @@ export function createMarketArcade(area, _heightAt, colliders, assets, onStateCh
       area.z + (-lx * sinY + lz * cosY) * EXT_SCALE
     );
 
-  // Exterior Beacon & Marquee Glows
+  // Exterior neon beacons for the PS5 arcade silhouette (local model space).
   const extGlowCoords = [
-    [-4.85, 2.2, 9.5],
-    [4.85, 2.2, 9.5],
-    [-5.8, 4.6, 6.6],
-    [5.8, 4.6, 6.6],
-    [0.0, 12.1, 6.2],
-    [-6.8, 11.7, 6.2],
-    [6.8, 11.7, 6.2],
+    [0.0, 11.6, 3.2],
+    [-4.4, 6.2, 3.4],
+    [4.4, 6.2, 3.4],
+    [-4.6, 3.4, 2.8],
+    [4.6, 3.4, 2.8],
+    [-3.8, 9.4, 0.0],
+    [3.8, 9.4, 0.0],
   ];
   exteriorGroup.add(
     createGlows(
       extGlowCoords.map(([lx, ly, lz]) => toExteriorWorld(lx, ly, lz)),
-      { color: "#ffd23f", size: 520, day: 0.55 }
+      { color: "#4fc3f7", size: 520, day: 0.55 }
+    )
+  );
+  exteriorGroup.add(
+    createGlows(
+      [
+        toExteriorWorld(0.0, 12.4, 3.5),
+        toExteriorWorld(-4.2, 5.0, 3.6),
+        toExteriorWorld(4.2, 5.0, 3.6),
+      ],
+      { color: "#ff6b9d", size: 420, day: 0.4 }
     )
   );
 
-  // Solid Exterior Colliders around the Podium & Stairs so the car cannot enter or bounce on stairs
+  // Solid exterior colliders around the PS5 arcade shell (bbox ≈ ±5.2 x, -3.65..3.99 z).
   const addExtCollider = (lx, lz, radius) => {
     const w = toExteriorWorld(lx, 0, lz);
     colliders.push({ x: w.x, z: w.z, radius: radius * EXT_SCALE });
   };
-  for (let lx = -10.6; lx <= 10.61; lx += 1.9) {
-    addExtCollider(lx, -8.8, 1.45);
-    addExtCollider(lx, 8.2, 1.45);
-    addExtCollider(lx, 0.0, 2.1);
+  for (let lx = -5.0; lx <= 5.01; lx += 1.4) {
+    addExtCollider(lx, -3.4, 1.15);
+    addExtCollider(lx, 1.0, 1.35);
   }
-  for (let lz = -7.0; lz <= 6.8; lz += 1.9) {
-    addExtCollider(-10.6, lz, 1.45);
-    addExtCollider(10.6, lz, 1.45);
+  for (let lz = -3.2; lz <= 3.6; lz += 1.4) {
+    addExtCollider(-5.0, lz, 1.15);
+    addExtCollider(5.0, lz, 1.15);
   }
-  for (let lx = -4.5; lx <= 4.51; lx += 1.5) {
-    addExtCollider(lx, 9.2, 1.25);
-    addExtCollider(lx, 10.2, 1.25);
+  // Soft front lip so karts don't clip the stairs / entry porch.
+  for (let lx = -3.2; lx <= 3.21; lx += 1.3) {
+    addExtCollider(lx, 3.7, 1.05);
   }
 
   // ============================================================================
