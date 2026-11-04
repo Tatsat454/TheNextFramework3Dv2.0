@@ -2,7 +2,9 @@
 
 const isTouchDevice = () =>
   typeof window !== "undefined" &&
-  ("ontouchstart" in window || navigator.maxTouchPoints > 0 || window.matchMedia?.("(pointer: coarse)")?.matches);
+  ("ontouchstart" in window ||
+    (navigator.maxTouchPoints ?? 0) > 0 ||
+    window.matchMedia?.("(pointer: coarse)")?.matches);
 
 function makeButton(className, label, ariaLabel) {
   const el = document.createElement("button");
@@ -13,16 +15,13 @@ function makeButton(className, label, ariaLabel) {
   return el;
 }
 
-export function createMobileControls({
-  onCycleRide,
-  onInteract,
-  onJump,
-} = {}) {
+export function createMobileControls({ onCycleRide, onInteract, onAction, onJump } = {}) {
   if (!isTouchDevice()) {
     return {
       enabled: false,
       show() {},
       hide() {},
+      setMode() {},
       applyTo() {},
       destroy() {},
     };
@@ -30,9 +29,9 @@ export function createMobileControls({
 
   const root = document.createElement("div");
   root.className = "mobile-controls";
+  root.dataset.mode = "land";
   root.setAttribute("aria-hidden", "true");
 
-  // —— Joystick (left) ——
   const stick = document.createElement("div");
   stick.className = "mobile-joystick";
   const limit = document.createElement("div");
@@ -42,222 +41,297 @@ export function createMobileControls({
   stick.append(limit, cursor);
   root.appendChild(stick);
 
-  // —— Action column (right) ——
   const actions = document.createElement("div");
   actions.className = "mobile-actions";
-  const boostBtn = makeButton("is-boost", "≫", "Boost");
+  const boostBtn = makeButton("is-boost", "A", "Boost");
   const forwardBtn = makeButton("is-forward", "▲", "Accelerate");
   const brakeBtn = makeButton("is-brake", "■", "Brake");
   const jumpBtn = makeButton("is-jump", "⤒", "Jump");
-  const cycleBtn = makeButton("is-cycle", "V", "Switch vehicle");
+  const actionBtn = makeButton("is-action", "B", "Action");
   const interactBtn = makeButton("is-interact", "E", "Interact");
-  actions.append(boostBtn, forwardBtn, brakeBtn, jumpBtn, cycleBtn, interactBtn);
+  actions.append(boostBtn, forwardBtn, brakeBtn, jumpBtn, actionBtn, interactBtn);
   root.appendChild(actions);
   document.body.appendChild(root);
 
   const state = {
     visible: false,
+    mode: "land",
     steerAxis: 0,
+    throttleAxis: 0,
     forward: false,
     backward: false,
     boost: false,
     jump: false,
+    action: false,
     stickActive: false,
     stickId: null,
     centerX: 0,
     centerY: 0,
+    maxRadius: 48,
+    axisScale: 55,
     curX: 0,
     curY: 0,
+    stickDownAt: 0,
+    stickDownX: 0,
+    stickDownY: 0,
   };
+
+  const holds = new Set();
+  let lastSwitchTap = 0;
 
   const resizeStick = () => {
     const box = stick.getBoundingClientRect();
     state.centerX = box.left + box.width * 0.5;
     state.centerY = box.top + box.height * 0.5;
+    const half = Math.max(24, box.width * 0.5);
+    state.maxRadius = half * 0.55;
+    state.axisScale = half * 0.65;
   };
 
   const updateCursor = () => {
     if (!state.stickActive) {
       cursor.style.transform = "translate(0px, 0px)";
       state.steerAxis = 0;
+      state.throttleAxis = 0;
       return;
     }
     const dx = state.curX - state.centerX;
     const dy = state.curY - state.centerY;
     const distance = Math.hypot(dx, dy);
     let radius = distance;
-    if (radius > 22) radius = 22 + Math.log(distance - 22 + 1) * 5;
-    if (radius > 48) radius = 48;
+    const soft = state.maxRadius * 0.45;
+    if (radius > soft) radius = soft + Math.log(distance - soft + 1) * 5;
+    if (radius > state.maxRadius) radius = state.maxRadius;
     const angle = Math.atan2(dy, dx);
-    const cx = Math.cos(angle) * radius;
-    const cy = Math.sin(angle) * radius;
-    cursor.style.transform = `translate(${cx}px, ${cy}px)`;
-    // Horizontal axis steers; deadzone keeps thumbs from twitching.
-    const raw = Math.max(-1, Math.min(1, dx / 55));
-    state.steerAxis = Math.abs(raw) < 0.12 ? 0 : raw;
+    cursor.style.transform = `translate(${Math.cos(angle) * radius}px, ${Math.sin(angle) * radius}px)`;
+
+    const rawX = Math.max(-1, Math.min(1, dx / state.axisScale));
+    // Screen up (negative dy) = forward / climb.
+    const rawY = Math.max(-1, Math.min(1, -dy / state.axisScale));
+    state.steerAxis = Math.abs(rawX) < 0.12 ? 0 : rawX;
+    state.throttleAxis = Math.abs(rawY) < 0.12 ? 0 : rawY;
   };
 
-  const onStickStart = (event) => {
-    event.preventDefault();
-    const touch = event.changedTouches?.[0];
-    if (!touch) return;
-    resizeStick();
-    state.stickActive = true;
-    state.stickId = touch.identifier;
-    state.curX = touch.clientX;
-    state.curY = touch.clientY;
-    limit.classList.add("is-active");
-    updateCursor();
-  };
-
-  const onStickMove = (event) => {
-    if (!state.stickActive) return;
-    event.preventDefault();
-    const touch = [...event.changedTouches].find((t) => t.identifier === state.stickId);
-    if (!touch) return;
-    state.curX = touch.clientX;
-    state.curY = touch.clientY;
-    updateCursor();
-  };
-
-  const onStickEnd = (event) => {
-    const touch = [...event.changedTouches].find((t) => t.identifier === state.stickId);
-    if (!touch) return;
+  const clearStick = (wasTap = false) => {
+    if (wasTap) {
+      const now = performance.now();
+      if (now - lastSwitchTap < 320) {
+        lastSwitchTap = 0;
+        onCycleRide?.();
+      } else {
+        lastSwitchTap = now;
+      }
+    }
     state.stickActive = false;
     state.stickId = null;
     limit.classList.remove("is-active");
     updateCursor();
   };
 
-  stick.addEventListener("touchstart", onStickStart, { passive: false });
-  window.addEventListener("touchmove", onStickMove, { passive: false });
-  window.addEventListener("touchend", onStickEnd);
-  window.addEventListener("touchcancel", onStickEnd);
-  window.addEventListener("resize", resizeStick);
-
-  const bindHold = (button, onStart, onEnd) => {
-    let id = null;
-    const start = (event) => {
-      event.preventDefault();
-      const touch = event.changedTouches?.[0] || event;
-      id = touch.identifier ?? "mouse";
-      button.classList.add("is-pressed");
-      onStart();
-    };
-    const end = (event) => {
-      if (event.changedTouches) {
-        if (![...event.changedTouches].some((t) => t.identifier === id)) return;
-      } else if (id !== "mouse") return;
-      id = null;
-      button.classList.remove("is-pressed");
-      onEnd();
-    };
-    button.addEventListener("touchstart", start, { passive: false });
-    button.addEventListener("mousedown", start);
-    window.addEventListener("touchend", end);
-    window.addEventListener("touchcancel", end);
-    window.addEventListener("mouseup", end);
-  };
-
-  bindHold(
-    forwardBtn,
-    () => {
-      state.forward = true;
-    },
-    () => {
-      state.forward = false;
-    }
-  );
-  bindHold(
-    brakeBtn,
-    () => {
-      state.backward = true;
-    },
-    () => {
-      state.backward = false;
-    }
-  );
-  bindHold(
-    boostBtn,
-    () => {
-      state.boost = true;
-      state.forward = true;
-    },
-    () => {
-      state.boost = false;
-      if (!forwardBtn.classList.contains("is-pressed")) state.forward = false;
-    }
-  );
-  bindHold(
-    jumpBtn,
-    () => {
-      state.jump = true;
-      onJump?.();
-    },
-    () => {
-      state.jump = false;
-    }
-  );
-
-  // Tap actions
-  const tap = (button, fn) => {
-    button.addEventListener(
-      "touchstart",
-      (event) => {
-        event.preventDefault();
-        button.classList.add("is-pressed");
-        fn?.();
-      },
-      { passive: false }
-    );
-    button.addEventListener("touchend", () => button.classList.remove("is-pressed"));
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      fn?.();
-    });
-  };
-  tap(cycleBtn, () => onCycleRide?.());
-  tap(interactBtn, () => onInteract?.());
-
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) return;
+  const resetInputs = () => {
     state.forward = false;
     state.backward = false;
     state.boost = false;
     state.jump = false;
-    state.stickActive = false;
-    state.steerAxis = 0;
-    cursor.style.transform = "translate(0px, 0px)";
+    state.action = false;
+    clearStick(false);
+    holds.clear();
     root.querySelectorAll(".is-pressed").forEach((el) => el.classList.remove("is-pressed"));
+  };
+
+  const onStickDown = (event) => {
+    if (!state.visible || state.stickId != null) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    resizeStick();
+    state.stickActive = true;
+    state.stickId = event.pointerId;
+    state.curX = event.clientX;
+    state.curY = event.clientY;
+    state.stickDownAt = performance.now();
+    state.stickDownX = event.clientX;
+    state.stickDownY = event.clientY;
+    limit.classList.add("is-active");
+    stick.setPointerCapture(event.pointerId);
+    updateCursor();
+  };
+
+  const onStickMove = (event) => {
+    if (event.pointerId !== state.stickId) return;
+    event.preventDefault();
+    state.curX = event.clientX;
+    state.curY = event.clientY;
+    updateCursor();
+  };
+
+  const onStickUp = (event) => {
+    if (event.pointerId !== state.stickId) return;
+    event.preventDefault();
+    const held = performance.now() - state.stickDownAt;
+    const moved = Math.hypot(state.curX - state.stickDownX, state.curY - state.stickDownY);
+    const wasTap = held < 220 && moved < 14;
+    clearStick(wasTap);
+  };
+
+  stick.addEventListener("pointerdown", onStickDown);
+  stick.addEventListener("pointermove", onStickMove);
+  stick.addEventListener("pointerup", onStickUp);
+  stick.addEventListener("pointercancel", onStickUp);
+  stick.addEventListener("lostpointercapture", () => {
+    if (state.stickActive) clearStick(false);
+  });
+
+  const bindHold = (button, key) => {
+    let pointerId = null;
+    const press = () => {
+      holds.add(key);
+      button.classList.add("is-pressed");
+      if (key === "action") {
+        // Interact/prompt consumes the press; otherwise it is a sonic boom.
+        state.action = onAction?.() !== true;
+      } else {
+        state[key] = true;
+        if (key === "jump") onJump?.();
+      }
+    };
+    const release = () => {
+      if (pointerId == null && !holds.has(key)) return;
+      pointerId = null;
+      holds.delete(key);
+      state[key] = false;
+      button.classList.remove("is-pressed");
+    };
+    button.addEventListener("pointerdown", (event) => {
+      if (!state.visible) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (pointerId != null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      pointerId = event.pointerId;
+      button.setPointerCapture(event.pointerId);
+      press();
+    });
+    const end = (event) => {
+      if (pointerId == null || event.pointerId !== pointerId) return;
+      event.preventDefault();
+      release();
+    };
+    button.addEventListener("pointerup", end);
+    button.addEventListener("pointercancel", end);
+    button.addEventListener("lostpointercapture", () => {
+      if (pointerId != null) release();
+    });
+  };
+
+  bindHold(forwardBtn, "forward");
+  bindHold(brakeBtn, "backward");
+  bindHold(boostBtn, "boost");
+  bindHold(jumpBtn, "jump");
+  bindHold(actionBtn, "action");
+
+  const bindTap = (button, fn) => {
+    let pointerId = null;
+    let armed = false;
+    button.addEventListener("pointerdown", (event) => {
+      if (!state.visible) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      pointerId = event.pointerId;
+      armed = true;
+      button.classList.add("is-pressed");
+      button.setPointerCapture(event.pointerId);
+    });
+    const finish = (event, fire) => {
+      if (pointerId == null || event.pointerId !== pointerId) return;
+      event.preventDefault();
+      pointerId = null;
+      button.classList.remove("is-pressed");
+      if (fire && armed) fn?.();
+      armed = false;
+    };
+    button.addEventListener("pointerup", (event) => finish(event, true));
+    button.addEventListener("pointercancel", (event) => finish(event, false));
+    button.addEventListener("lostpointercapture", () => {
+      pointerId = null;
+      armed = false;
+      button.classList.remove("is-pressed");
+    });
+  };
+
+  bindTap(interactBtn, () => onInteract?.());
+
+  const onResize = () => {
+    if (state.visible) resizeStick();
+  };
+  window.addEventListener("resize", onResize);
+  window.addEventListener("orientationchange", onResize);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) resetInputs();
   });
 
   return {
     enabled: true,
     show() {
+      if (state.visible) return;
       state.visible = true;
       root.classList.add("is-visible");
       root.setAttribute("aria-hidden", "false");
       requestAnimationFrame(resizeStick);
     },
     hide() {
+      if (!state.visible) return;
+      resetInputs();
       state.visible = false;
       root.classList.remove("is-visible");
       root.setAttribute("aria-hidden", "true");
     },
+    setMode(mode) {
+      const next = mode === "air" ? "air" : "land";
+      if (state.mode === next) return;
+      state.mode = next;
+      root.dataset.mode = next;
+      // Drop mode-specific holds so nothing sticks across Kart ↔ UFO.
+      state.forward = false;
+      state.backward = false;
+      state.jump = false;
+      state.action = false;
+      forwardBtn.classList.remove("is-pressed");
+      brakeBtn.classList.remove("is-pressed");
+      jumpBtn.classList.remove("is-pressed");
+      actionBtn.classList.remove("is-pressed");
+      holds.delete("forward");
+      holds.delete("backward");
+      holds.delete("jump");
+      holds.delete("action");
+    },
     applyTo(input) {
       if (!state.visible) return;
-      if (state.forward) input.forward = true;
-      if (state.backward) input.backward = true;
-      if (state.boost) input.boost = true;
-      if (state.jump) input.jump = true;
-      // Analog steer only — vehicle prefers steerAxis over left/right booleans.
+      const air = state.mode === "air";
+
+      if (air) {
+        // Full stick: forward climbs, back descends, sideways turns.
+        if (state.throttleAxis > 0.12) input.forward = true;
+        if (state.throttleAxis < -0.12) input.backward = true;
+        if (state.boost) {
+          input.boost = true;
+          if (state.throttleAxis >= -0.12) input.forward = true;
+        }
+        if (state.action) input.action = true;
+      } else {
+        if (state.forward || state.boost) input.forward = true;
+        if (state.backward) input.backward = true;
+        if (state.boost) input.boost = true;
+        if (state.jump) input.jump = true;
+      }
+
       input.steerAxis = state.steerAxis;
     },
     destroy() {
-      window.removeEventListener("touchmove", onStickMove);
-      window.removeEventListener("touchend", onStickEnd);
-      window.removeEventListener("touchcancel", onStickEnd);
-      window.removeEventListener("resize", resizeStick);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
       root.remove();
     },
   };

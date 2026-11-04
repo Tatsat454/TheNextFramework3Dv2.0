@@ -1082,17 +1082,31 @@ kbd {
   line-height: 1;
 }
 
-.mobile-btn.is-boost .mobile-btn-icon {
+.mobile-btn.is-boost .mobile-btn-icon,
+.mobile-btn.is-action .mobile-btn-icon {
   font-size: 22px;
-  letter-spacing: -0.08em;
+  letter-spacing: 0.02em;
 }
 
 .mobile-btn.is-brake .mobile-btn-icon {
   font-size: 14px;
 }
 
-@media (min-width: 900px) and (pointer: fine) {
+/* Land: drive buttons. Air: stick does move/climb; only Boost + Action. */
+.mobile-controls[data-mode="air"] .is-forward,
+.mobile-controls[data-mode="air"] .is-brake,
+.mobile-controls[data-mode="air"] .is-jump,
+.mobile-controls[data-mode="air"] .is-interact {
+  display: none;
+}
+
+.mobile-controls[data-mode="land"] .is-action {
+  display: none;
+}
+
+/* Hide only on mouse-only desktops — keep for phones/tablets even with a trackpad. */
+@media (hover: hover) and (pointer: fine) and (not (any-pointer: coarse)) {
   .mobile-controls {
-    display: none;
+    display: none !important;
   }
 }

@@ -122,36 +122,66 @@ const cycles = createCycles(sky);
 
 shared.uRevealCenter.value.set(vehicle.position.x, vehicle.position.z);
 
-const input = {
+const keys = {
   forward: false,
   backward: false,
   left: false,
   right: false,
   boost: false,
   jump: false,
+  action: false,
   down: false,
-  somersault: false,
-  loop: false,
+};
+
+const input = {
+  ...keys,
   reset: false,
   steerAxis: 0,
 };
 
+const syncInputFromKeys = () => {
+  input.forward = keys.forward;
+  input.backward = keys.backward;
+  input.left = keys.left;
+  input.right = keys.right;
+  input.boost = keys.boost;
+  input.jump = keys.jump;
+  input.action = keys.action;
+  input.down = keys.down;
+  input.steerAxis = 0;
+};
+
+const clearKeys = () => {
+  for (const key of Object.keys(keys)) keys[key] = false;
+  syncInputFromKeys();
+  input.reset = false;
+};
+
 const cycleRideFromUi = () => {
   if (!started || areas.isInsideDungeon()) return;
+  keys.boost = false;
+  keys.action = false;
   input.boost = false;
+  input.action = false;
   input.reset = false;
   rideToast = vehicle.cycleRide();
   follow.alignTo(vehicle.heading);
   follow.setFlyLook(vehicle.ride?.id === "ufo");
+  if (mobile.enabled) mobile.setMode(vehicle.ride?.id === "ufo" ? "air" : "land");
+};
+
+const tryInteract = () => {
+  if (!started) return false;
+  if (areas.openPrompt()) return true;
+  return !!areas.talk();
 };
 
 const mobile = createMobileControls({
   onCycleRide: () => cycleRideFromUi(),
   onInteract: () => {
-    if (!started) return;
-    if (areas.openPrompt()) return;
-    areas.talk();
+    tryInteract();
   },
+  onAction: () => tryInteract(),
 });
 const keyMap = {
   KeyW: "forward",
@@ -162,11 +192,6 @@ const keyMap = {
   ArrowLeft: "left",
   KeyD: "right",
   ArrowRight: "right",
-  Space: "jump",
-  ControlLeft: "down",
-  ControlRight: "down",
-  KeyQ: "somersault",
-  KeyF: "loop",
 };
 
 const hud = {
@@ -226,12 +251,13 @@ let revealTime = -1;
 const setKey = (code, value) => {
   const action = keyMap[code];
   if (!action) return false;
-  input[action] = value;
+  keys[action] = value;
   return true;
 };
 
 const isUfoRide = () => !areas.isInsideDungeon() && vehicle.ride?.id === "ufo";
 const isShiftKey = (code) => code === "ShiftLeft" || code === "ShiftRight";
+let lastVehicleTap = 0;
 
 window.addEventListener("keydown", (event) => {
   if (!started) {
@@ -241,13 +267,17 @@ window.addEventListener("keydown", (event) => {
   if (setKey(event.code, true)) event.preventDefault();
   if (event.repeat) return;
   if (isShiftKey(event.code)) {
-    // Kart / on foot: boost/sprint. UFO: sonic boom.
-    if (isUfoRide()) input.reset = true;
-    else input.boost = true;
+    // Land + air: hold Shift to boost.
+    keys.boost = true;
+    event.preventDefault();
+  }
+  if (event.code === "Space") {
+    if (isUfoRide()) keys.action = true;
+    else keys.jump = true;
     event.preventDefault();
   }
   if (event.code === "KeyR") {
-    // Kart only: respawn. UFO: unbound.
+    // Kart only: respawn.
     if (!isUfoRide() && !areas.isInsideDungeon()) {
       input.reset = true;
       event.preventDefault();
@@ -255,18 +285,37 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.code === "KeyC") follow.toggleChase();
   if (event.code === "KeyT") cycles.skip();
-  if (event.code === "KeyE") areas.talk();
-  if (event.code === "KeyV" && !areas.isInsideDungeon()) cycleRideFromUi();
+  if (event.code === "KeyE") {
+    if (isUfoRide()) {
+      if (!tryInteract()) keys.action = true;
+    } else {
+      areas.talk();
+    }
+  }
+  if (event.code === "KeyV" && !areas.isInsideDungeon()) {
+    const now = performance.now();
+    if (now - lastVehicleTap < 320) {
+      lastVehicleTap = 0;
+      cycleRideFromUi();
+    } else {
+      lastVehicleTap = now;
+    }
+  }
   if (event.code === "KeyL" && !areas.isInsideDungeon()) vehicle.toggleLights();
   const digit = /^Digit([0-4])$/.exec(event.code);
   if (digit) travel(Number(digit[1]) - 1);
 });
 window.addEventListener("keyup", (event) => {
   setKey(event.code, false);
-  if (isShiftKey(event.code)) input.boost = false;
+  if (isShiftKey(event.code)) keys.boost = false;
+  if (event.code === "Space") {
+    keys.jump = false;
+    keys.action = false;
+  }
+  if (event.code === "KeyE") keys.action = false;
 });
 window.addEventListener("blur", () => {
-  for (const key of Object.keys(input)) input[key] = false;
+  clearKeys();
 });
 hud.time.addEventListener("click", () => cycles.skip());
 
@@ -383,7 +432,10 @@ function start() {
   revealTime = 0;
   follow.startIntro();
   music.start().then(syncMusicButton);
-  mobile.show();
+  if (mobile.enabled) {
+    mobile.setMode(vehicle.ride?.id === "ufo" ? "air" : "land");
+    mobile.show();
+  }
 }
 hud.start.addEventListener("click", start);
 hud.toast.addEventListener("click", () => {
@@ -502,7 +554,7 @@ function tick(now) {
   const inDungeon = areas.isInsideDungeon();
 
   if (started) {
-    input.steerAxis = 0;
+    syncInputFromKeys();
     if (inDungeon) {
       if (mobile.enabled) mobile.hide();
       follow.setFlyLook(false);
@@ -510,6 +562,7 @@ function tick(now) {
       input.reset = false;
     } else {
       if (mobile.enabled) {
+        mobile.setMode(vehicle.ride?.id === "ufo" ? "air" : "land");
         mobile.show();
         mobile.applyTo(input);
       }
@@ -570,8 +623,8 @@ function tick(now) {
     hud.toastName.style.color = rideToast.color;
     hud.toastTagline.textContent =
       rideToast.id === "ufo"
-        ? "Mouse look, W camera-forward, S down, A/D turn. Shift sonic boom, L light"
-        : "WASD drive, Shift boost, R respawn, Space jump — or use the on-screen stick";
+        ? "WASD fly — forward climbs, back descends. Shift boost, Space/E action. Double-tap V to switch"
+        : "WASD drive, Shift boost, R respawn, Space jump. Double-tap V to switch — or use the stick";
     hud.toast.classList.add("is-visible");
     hud.toast.classList.remove("is-link", "has-progress", "is-story");
     delete hud.toast.dataset.url;

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createEmissiveMaterial, createSolidMaterial, shared } from "./shading.js";
-import { damp, dampAngle } from "./noise.js";
+import { damp } from "./noise.js";
 
 const WHEEL_RADIUS = 0.52;
 const HALF_LENGTH = 1.35;
@@ -351,6 +351,7 @@ export async function createVehicle({ spawn, heading = 0, groundHeight, terrain,
     stuntTime: 0,
     boostLatch: false,
     stuntLatch: false,
+    actionLatch: false,
     prevThrottle: 0,
     ufoLight: true,
   };
@@ -476,39 +477,31 @@ export async function createVehicle({ spawn, heading = 0, groundHeight, terrain,
   };
 
   const updateFlight = (dt, input, look = {}) => {
-    const lookHeading = look.heading ?? state.heading;
-    const throttle = input.forward ? 1 : 0;
-    const pitchInput = (input.jump ? 1 : 0) - (input.down ? 1 : 0);
-    const steerTarget = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+    const analog = typeof input.steerAxis === "number" ? -input.steerAxis : 0;
+    const digital = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+    const steerTarget = Math.abs(analog) > 0.05 ? analog : digital;
     state.steer = damp(state.steer, steerTarget, 8, dt);
 
-    const wantDash = input.boost && input.forward;
-    if (wantDash && !state.boostLatch && !state.stunt) startStunt("dash");
-    const wantTrick = input.somersault || input.loop;
-    if (wantTrick && !state.stuntLatch && !state.stunt && input.forward) startStunt(input.somersault ? "somersault" : "loop");
-    if (input.reset && !state.stunt) {
+    // Action = sonic boom (edge). Boost is continuous speed/climb — not a dash.
+    const wantAction = !!(input.action || input.reset);
+    if (wantAction && !state.actionLatch && !state.stunt) {
       startStunt("boom");
       fireSonicBoom();
     }
-    state.boostLatch = input.boost;
-    state.stuntLatch = wantTrick;
-    state.prevThrottle = throttle;
+    state.actionLatch = wantAction;
+    state.boostLatch = !!input.boost;
+    state.prevThrottle = input.forward ? 1 : 0;
 
-    let posePitch = 0;
-    let poseRoll = state.steer * 0.38;
+    let posePitch = state.flightPitch;
+    let poseRoll = state.steer * 0.42;
     let move = 0;
 
     if (state.stunt) {
       state.stuntTime += dt;
       const t = state.stuntTime;
-      if (state.stunt === "dash") {
-        move = 36;
-        poseRoll = (t / 0.62) * Math.PI * 2;
-        posePitch = -0.08;
-        if (t >= 0.62) state.stunt = null;
-      } else if (state.stunt === "boom") {
+      if (state.stunt === "boom") {
         move = 54;
-        posePitch = -0.12;
+        posePitch = -0.14;
         poseRoll = Math.sin(t * 18) * 0.08;
         if (Math.random() < 0.7) {
           particles.emit({
@@ -524,23 +517,8 @@ export async function createVehicle({ spawn, heading = 0, groundHeight, terrain,
         }
         if (t >= 0.52) {
           state.stunt = null;
-          state.airspeed = 26;
+          state.airspeed = Math.max(state.airspeed, 26);
         }
-      } else if (state.stunt === "loop") {
-        const u = Math.min(1, t / 1.15);
-        const a = u * Math.PI * 2;
-        move = 20;
-        posePitch = -a;
-        position.y += Math.cos(a) * 26 * dt;
-        if (t >= 1.15) state.stunt = null;
-      } else if (state.stunt === "somersault") {
-        const u = Math.min(1, t / 1.05);
-        const a = u * Math.PI * 2;
-        move = 18;
-        posePitch = a;
-        poseRoll = a * 1.4;
-        position.y -= 14 * dt;
-        if (t >= 1.05) state.stunt = null;
       } else if (state.stunt === "uturn") {
         const u = Math.min(1, t / 0.95);
         posePitch = -u * Math.PI;
@@ -552,27 +530,43 @@ export async function createVehicle({ spawn, heading = 0, groundHeight, terrain,
           state.stunt = null;
           posePitch = 0;
         }
+      } else {
+        // Drop legacy stunts (dash / loop / somersault) into a clean exit.
+        state.stunt = null;
       }
     } else {
-      const cruise = input.boost ? 28 : 18;
-      if (input.forward) state.airspeed = damp(state.airspeed, cruise, 3.2, dt);
-      else state.airspeed = damp(state.airspeed, 0, 2.2, dt);
+      const boosting = !!input.boost;
+      const cruise = boosting ? 34 : 20;
+      const climbRate = boosting ? 24 : 14;
+      const descendRate = 18;
+
+      if (input.forward) {
+        // Push forward: fly + automatically ascend; nose tilts up.
+        state.airspeed = damp(state.airspeed, cruise, 3.4, dt);
+        position.y += climbRate * dt;
+        posePitch = damp(state.flightPitch, -0.34, 6, dt);
+      } else if (input.backward) {
+        // Pull back: slow down and descend; nose tilts down.
+        state.airspeed = damp(state.airspeed, 0, 3.8, dt);
+        position.y -= descendRate * dt;
+        posePitch = damp(state.flightPitch, 0.28, 6, dt);
+      } else {
+        // Release: hold altitude, bleed speed, level out.
+        state.airspeed = damp(state.airspeed, 0, 1.55, dt);
+        posePitch = damp(state.flightPitch, 0, 5, dt);
+      }
       state.airspeed = Math.max(0, state.airspeed);
       move = state.airspeed;
-      const moving = state.airspeed > 1.4;
-      const pitchTarget = moving ? THREE.MathUtils.clamp(-pitchInput * 0.48, -0.5, 0.5) : 0;
-      posePitch = damp(state.flightPitch, pitchTarget, 7, dt);
     }
 
     if (!state.stunt) {
-      const turn = state.steer * 1.85 * dt;
+      const turn = state.steer * 2.05 * dt;
       state.heading += turn;
       look.turnCamera?.(turn);
-      if (input.forward) state.heading = dampAngle(state.heading, lookHeading, 10, dt);
     }
 
     const signedSpeed = Math.max(0, state.stunt ? move : state.airspeed);
-    const flyHeading = !state.stunt && input.forward ? lookHeading : state.heading;
+    const flyHeading = state.heading;
     const nextX = position.x + Math.sin(flyHeading) * signedSpeed * dt;
     const nextZ = position.z + Math.cos(flyHeading) * signedSpeed * dt;
     const limit = Math.hypot(nextX, nextZ);
@@ -587,12 +581,6 @@ export async function createVehicle({ spawn, heading = 0, groundHeight, terrain,
       position.x = nextX;
       position.z = nextZ;
     }
-
-    if (!state.stunt || state.stunt === "dash" || state.stunt === "boom") {
-      const climb = signedSpeed * Math.sin(-posePitch);
-      position.y += climb * dt;
-    }
-    if (!state.stunt && input.backward) position.y -= 18 * dt;
 
     const floor = groundHeight(position.x, position.z) + FLY_CLEARANCE;
     if (position.y < floor) position.y = floor;
