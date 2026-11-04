@@ -311,20 +311,20 @@ export function createMobileControls({ onCycleRide, onInteract, onAction, onJump
       if (!state.visible) return;
       const air = state.mode === "air";
 
+      // Stick covers drive/flight: up = accelerate (or climb), down = brake/reverse (or descend).
+      if (state.throttleAxis > 0.12 || state.forward) input.forward = true;
+      if (state.throttleAxis < -0.12 || state.backward) input.backward = true;
+
+      if (state.boost) {
+        input.boost = true;
+        // Boost alone still pushes forward unless the stick is clearly braking.
+        if (state.throttleAxis >= -0.12) input.forward = true;
+      }
+
       if (air) {
-        // Full stick: forward climbs, back descends, sideways turns.
-        if (state.throttleAxis > 0.12) input.forward = true;
-        if (state.throttleAxis < -0.12) input.backward = true;
-        if (state.boost) {
-          input.boost = true;
-          if (state.throttleAxis >= -0.12) input.forward = true;
-        }
         if (state.action) input.action = true;
-      } else {
-        if (state.forward || state.boost) input.forward = true;
-        if (state.backward) input.backward = true;
-        if (state.boost) input.boost = true;
-        if (state.jump) input.jump = true;
+      } else if (state.jump) {
+        input.jump = true;
       }
 
       input.steerAxis = state.steerAxis;

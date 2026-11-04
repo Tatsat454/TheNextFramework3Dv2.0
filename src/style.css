@@ -1092,9 +1092,12 @@ kbd {
   font-size: 14px;
 }
 
-/* Land: drive buttons. Air: stick does move/climb; only Boost + Action. */
-.mobile-controls[data-mode="air"] .is-forward,
-.mobile-controls[data-mode="air"] .is-brake,
+/* Stick handles accel/brake (and air climb/descend). Mode-specific side buttons only. */
+.mobile-controls .is-forward,
+.mobile-controls .is-brake {
+  display: none;
+}
+
 .mobile-controls[data-mode="air"] .is-jump,
 .mobile-controls[data-mode="air"] .is-interact {
   display: none;
