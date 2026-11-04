@@ -536,23 +536,23 @@ export async function createVehicle({ spawn, heading = 0, groundHeight, terrain,
       }
     } else {
       const boosting = !!input.boost;
-      const cruise = boosting ? 34 : 20;
-      const climbRate = boosting ? 24 : 14;
-      const descendRate = 18;
+      const cruise = boosting ? 28 : 16;
+      const climbRate = boosting ? 18 : 11;
+      const descendRate = 15;
 
       if (input.forward) {
         // Push forward: fly + automatically ascend; nose tilts up.
-        state.airspeed = damp(state.airspeed, cruise, 3.4, dt);
+        state.airspeed = damp(state.airspeed, cruise, 2.2, dt);
         position.y += climbRate * dt;
         posePitch = damp(state.flightPitch, -0.34, 6, dt);
       } else if (input.backward) {
         // Pull back: slow down and descend; nose tilts down.
-        state.airspeed = damp(state.airspeed, 0, 3.8, dt);
+        state.airspeed = damp(state.airspeed, 0, 2.6, dt);
         position.y -= descendRate * dt;
         posePitch = damp(state.flightPitch, 0.28, 6, dt);
       } else {
         // Release: hold altitude, bleed speed, level out.
-        state.airspeed = damp(state.airspeed, 0, 1.55, dt);
+        state.airspeed = damp(state.airspeed, 0, 1.35, dt);
         posePitch = damp(state.flightPitch, 0, 5, dt);
       }
       state.airspeed = Math.max(0, state.airspeed);
@@ -641,16 +641,16 @@ export async function createVehicle({ spawn, heading = 0, groundHeight, terrain,
     const steerTarget = Math.abs(analog) > 0.05 ? analog : digital;
     state.steer = damp(state.steer, steerTarget, 10, dt);
     const boosting = input.boost && throttle > 0;
-    const topSpeed = boosting ? 36 : 23;
+    const topSpeed = boosting ? 30 : 19;
     const grip = state.grounded ? 1 : 0.15;
 
     if (throttle > 0) {
       const headroom = Math.max(0, 1 - forwardSpeed / topSpeed);
-      const push = boosting ? 44 : 30;
+      const push = boosting ? 26 : 17;
       forwardSpeed += push * headroom * grip * dt;
     } else if (throttle < 0) {
-      if (forwardSpeed > 0.5) forwardSpeed -= 46 * grip * dt;
-      else forwardSpeed = Math.max(-10, forwardSpeed - 18 * grip * dt);
+      if (forwardSpeed > 0.5) forwardSpeed -= 38 * grip * dt;
+      else forwardSpeed = Math.max(-8, forwardSpeed - 14 * grip * dt);
     } else {
       forwardSpeed *= Math.exp(-(state.grounded ? 1.1 : 0.1) * dt);
     }
