@@ -13,18 +13,15 @@ Inspired by [Bruno Simon](https://bruno-simon.com). Built with Three.js, Vite, a
 </p>
 <p>
   <img src="screenshots/kart.png" width="48%" alt="Kart on the island" />
-  <img src="screenshots/f1.png" width="48%" alt="F1 on the road" />
+  <img src="screenshots/ufo.png" width="48%" alt="UFO at dusk" />
 </p>
 <p>
-  <img src="screenshots/ufo.png" width="48%" alt="UFO at dusk" />
   <img src="screenshots/night-island.png" width="48%" alt="Night island" />
+  <img src="screenshots/stones.png" width="48%" alt="Stone Circle" />
 </p>
 <p>
   <img src="screenshots/temple.png" width="48%" alt="Temple of Tribulations" />
   <img src="screenshots/arcade.png" width="48%" alt="Market Row Arcade" />
-</p>
-<p>
-  <img src="screenshots/stones.png" width="70%" alt="Stone Circle" />
 </p>
 
 ---
@@ -152,10 +149,10 @@ Built the first real interior. Drive to the golden landmark, step into the **Res
 ### Act 4 — Market Row Arcade
 Added a pink Market Row landmark and a full retro arcade hall (GLB interior + exterior). Four playable minigames with local high scores. Palette and vibe nodding hard at Bruno Simon. Cabinets zoom when you play; Esc brings you home to the island.
 
-### Act 5 — F1 + soundtrack + menu
-- Rigged **F1** car (`f1_rigged.glb` + controller) into the vehicle cycle
+### Act 5 — Soundtrack + menu + mobile
 - Built an **Island Menu** with Land/Air controls, How to Play, and a music bar
 - Shipped the **playlist** with ▶⏸⏹↻⏭ symbols, centered UI
+- Added **Bruno Simon–style mobile controls** (joystick + drive buttons)
 - Connected a **custom domain**: Squarespace registration → Cloudflare nameservers → Cloudflare Pages hosting
 
 Music and minigames graduated from “coming soon” to “in the world.”
