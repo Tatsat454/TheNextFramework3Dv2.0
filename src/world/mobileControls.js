@@ -298,36 +298,55 @@ export function createMobileControls({ onCycleRide, onInteract, onAction, onJump
       state.backward = false;
       state.jump = false;
       state.action = false;
+      state.boost = false;
       forwardBtn.classList.remove("is-pressed");
       brakeBtn.classList.remove("is-pressed");
       jumpBtn.classList.remove("is-pressed");
       actionBtn.classList.remove("is-pressed");
+      boostBtn.classList.remove("is-pressed");
       holds.delete("forward");
       holds.delete("backward");
       holds.delete("jump");
       holds.delete("action");
+      holds.delete("boost");
+      const boostIcon = boostBtn.querySelector(".mobile-btn-icon");
+      const brakeIcon = brakeBtn.querySelector(".mobile-btn-icon");
+      if (next === "air") {
+        if (boostIcon) boostIcon.textContent = "↑";
+        if (brakeIcon) brakeIcon.textContent = "↓";
+        boostBtn.setAttribute("aria-label", "Ascend");
+        brakeBtn.setAttribute("aria-label", "Descend");
+      } else {
+        if (boostIcon) boostIcon.textContent = "A";
+        if (brakeIcon) brakeIcon.textContent = "■";
+        boostBtn.setAttribute("aria-label", "Boost");
+        brakeBtn.setAttribute("aria-label", "Brake");
+      }
     },
     applyTo(input) {
       if (!state.visible) return;
       const air = state.mode === "air";
 
-      // Stick covers drive/flight: up = accelerate (or climb), down = brake/reverse (or descend).
-      if (state.throttleAxis > 0.12 || state.forward) input.forward = true;
-      if (state.throttleAxis < -0.12 || state.backward) input.backward = true;
-
-      if (state.boost) {
-        input.boost = true;
-        // Boost alone still pushes forward unless the stick is clearly braking.
-        if (state.throttleAxis >= -0.12) input.forward = true;
-      }
-
       if (air) {
+        // Hover: stick is omnidirectional move; A ascend, ■ descend, B attack.
+        if (state.throttleAxis > 0.12) input.forward = true;
+        if (state.throttleAxis < -0.12) input.backward = true;
+        if (state.steerAxis > 0.12) input.right = true;
+        if (state.steerAxis < -0.12) input.left = true;
+        if (state.boost) input.jump = true;
+        if (state.backward) input.down = true;
         if (state.action) input.action = true;
-      } else if (state.jump) {
-        input.jump = true;
+        input.steerAxis = 0;
+      } else {
+        if (state.throttleAxis > 0.12 || state.forward) input.forward = true;
+        if (state.throttleAxis < -0.12 || state.backward) input.backward = true;
+        if (state.boost) {
+          input.boost = true;
+          if (state.throttleAxis >= -0.12) input.forward = true;
+        }
+        if (state.jump) input.jump = true;
+        input.steerAxis = state.steerAxis;
       }
-
-      input.steerAxis = state.steerAxis;
     },
     destroy() {
       window.removeEventListener("resize", onResize);

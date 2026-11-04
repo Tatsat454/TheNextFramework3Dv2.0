@@ -1092,18 +1092,18 @@ kbd {
   font-size: 14px;
 }
 
-/* Stick handles accel/brake (and air climb/descend). Mode-specific side buttons only. */
-.mobile-controls .is-forward,
-.mobile-controls .is-brake {
+/* Stick handles move. Land hides brake (stick brakes); air shows descend + attack. */
+.mobile-controls .is-forward {
+  display: none;
+}
+
+.mobile-controls[data-mode="land"] .is-brake,
+.mobile-controls[data-mode="land"] .is-action {
   display: none;
 }
 
 .mobile-controls[data-mode="air"] .is-jump,
 .mobile-controls[data-mode="air"] .is-interact {
-  display: none;
-}
-
-.mobile-controls[data-mode="land"] .is-action {
   display: none;
 }
 

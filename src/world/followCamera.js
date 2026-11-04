@@ -39,31 +39,30 @@ export function createFollowCamera(camera, domElement) {
     if (document.pointerLockElement === domElement) document.exitPointerLock?.();
   };
 
-  // Kart: classic click-drag orbit (c2603a1 style).
-  // UFO: optional pointer-lock look when flyLook is on.
+  // Kart: classic click-drag orbit.
+  // UFO: pointer-lock aim — left click does not unlock (abilities handled in main).
   domElement.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
-
-    // UFO mouse-look: click again to unlock
-    if (state.flyLook && document.pointerLockElement === domElement) {
-      releaseLook();
+    if (state.flyLook) {
+      if (state.blockLock) return;
+      if (event.button === 0 || event.button === 2) {
+        if (document.pointerLockElement !== domElement) {
+          domElement.requestPointerLock?.();
+        }
+        state.dragging = true;
+        state.lastX = event.clientX;
+        state.lastY = event.clientY;
+      }
       return;
     }
 
-    // Link toasts: only block UFO pointer-lock, never kart drag
-    if (state.flyLook && state.blockLock) return;
+    if (event.button !== 0) return;
 
     // Dragging the orbit cancels chase lock
-    if (!state.flyLook) state.chase = false;
-
+    state.chase = false;
     state.dragging = true;
     state.lastX = event.clientX;
     state.lastY = event.clientY;
     domElement.setPointerCapture(event.pointerId);
-
-    if (state.flyLook && !state.blockLock) {
-      domElement.requestPointerLock?.();
-    }
   });
 
   domElement.addEventListener("pointermove", (event) => {

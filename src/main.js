@@ -161,8 +161,12 @@ const cycleRideFromUi = () => {
   if (!started || areas.isInsideDungeon()) return;
   keys.boost = false;
   keys.action = false;
+  keys.down = false;
+  keys.jump = false;
   input.boost = false;
   input.action = false;
+  input.down = false;
+  input.jump = false;
   input.reset = false;
   rideToast = vehicle.cycleRide();
   follow.alignTo(vehicle.heading);
@@ -257,7 +261,6 @@ const setKey = (code, value) => {
 
 const isUfoRide = () => !areas.isInsideDungeon() && vehicle.ride?.id === "ufo";
 const isShiftKey = (code) => code === "ShiftLeft" || code === "ShiftRight";
-let lastVehicleTap = 0;
 
 window.addEventListener("keydown", (event) => {
   if (!started) {
@@ -267,13 +270,14 @@ window.addEventListener("keydown", (event) => {
   if (setKey(event.code, true)) event.preventDefault();
   if (event.repeat) return;
   if (isShiftKey(event.code)) {
-    // Land + air: hold Shift to boost.
-    keys.boost = true;
+    // UFO: descend. Kart: boost.
+    if (isUfoRide()) keys.down = true;
+    else keys.boost = true;
     event.preventDefault();
   }
   if (event.code === "Space") {
-    if (isUfoRide()) keys.action = true;
-    else keys.jump = true;
+    // UFO: ascend. Kart: jump.
+    keys.jump = true;
     event.preventDefault();
   }
   if (event.code === "KeyR") {
@@ -286,20 +290,10 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "KeyC") follow.toggleChase();
   if (event.code === "KeyT") cycles.skip();
   if (event.code === "KeyE") {
-    if (isUfoRide()) {
-      if (!tryInteract()) keys.action = true;
-    } else {
-      areas.talk();
-    }
+    tryInteract();
   }
   if (event.code === "KeyV" && !areas.isInsideDungeon()) {
-    const now = performance.now();
-    if (now - lastVehicleTap < 320) {
-      lastVehicleTap = 0;
-      cycleRideFromUi();
-    } else {
-      lastVehicleTap = now;
-    }
+    cycleRideFromUi();
   }
   if (event.code === "KeyL" && !areas.isInsideDungeon()) vehicle.toggleLights();
   const digit = /^Digit([0-4])$/.exec(event.code);
@@ -307,15 +301,39 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("keyup", (event) => {
   setKey(event.code, false);
-  if (isShiftKey(event.code)) keys.boost = false;
-  if (event.code === "Space") {
-    keys.jump = false;
-    keys.action = false;
+  if (isShiftKey(event.code)) {
+    keys.boost = false;
+    keys.down = false;
   }
-  if (event.code === "KeyE") keys.action = false;
+  if (event.code === "Space") keys.jump = false;
 });
 window.addEventListener("blur", () => {
   clearKeys();
+});
+
+// UFO mouse: left = primary (sonic boom), right = secondary (interact).
+canvas.addEventListener("pointerdown", (event) => {
+  if (!started || !isUfoRide()) return;
+  if (event.target !== canvas && !canvas.contains(event.target)) return;
+  if (hud.menu?.classList.contains("is-open")) return;
+  if (event.button === 0) {
+    keys.action = true;
+  } else if (event.button === 2) {
+    event.preventDefault();
+    tryInteract();
+  }
+});
+canvas.addEventListener("pointerup", (event) => {
+  if (event.button === 0) keys.action = false;
+});
+canvas.addEventListener("pointercancel", () => {
+  keys.action = false;
+});
+canvas.addEventListener("contextmenu", (event) => {
+  if (isUfoRide()) event.preventDefault();
+});
+document.addEventListener("pointerlockchange", () => {
+  if (document.pointerLockElement !== canvas) keys.action = false;
 });
 hud.time.addEventListener("click", () => cycles.skip());
 
@@ -623,8 +641,8 @@ function tick(now) {
     hud.toastName.style.color = rideToast.color;
     hud.toastTagline.textContent =
       rideToast.id === "ufo"
-        ? "WASD fly — forward climbs, back descends. Shift boost, Space/E action. Double-tap V to switch"
-        : "WASD drive, Shift boost, R respawn, Space jump. Double-tap V to switch — or use the stick";
+        ? "WASD strafe · Space up · Shift down · mouse aim · LMB attack · RMB interact · V switches"
+        : "WASD drive, Shift boost, R respawn, Space jump, V switches — or use the stick";
     hud.toast.classList.add("is-visible");
     hud.toast.classList.remove("is-link", "has-progress", "is-story");
     delete hud.toast.dataset.url;

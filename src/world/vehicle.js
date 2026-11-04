@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createEmissiveMaterial, createSolidMaterial, shared } from "./shading.js";
-import { damp } from "./noise.js";
+import { damp, dampAngle } from "./noise.js";
 
 const WHEEL_RADIUS = 0.52;
 const HALF_LENGTH = 1.35;
@@ -477,36 +477,73 @@ export async function createVehicle({ spawn, heading = 0, groundHeight, terrain,
   };
 
   const updateFlight = (dt, input, look = {}) => {
-    const analog = typeof input.steerAxis === "number" ? -input.steerAxis : 0;
-    const digital = (input.left ? 1 : 0) - (input.right ? 1 : 0);
-    const steerTarget = Math.abs(analog) > 0.05 ? analog : digital;
-    state.steer = damp(state.steer, steerTarget, 8, dt);
+    // Hover craft: face mouse aim, WASD strafe relative to that facing.
+    const aimHeading = look.heading ?? state.heading;
+    state.heading = dampAngle(state.heading, aimHeading, 14, dt);
 
-    // Action = sonic boom (edge). Boost is continuous speed/climb — not a dash.
     const wantAction = !!(input.action || input.reset);
     if (wantAction && !state.actionLatch && !state.stunt) {
       startStunt("boom");
       fireSonicBoom();
     }
     state.actionLatch = wantAction;
-    state.boostLatch = !!input.boost;
+    state.boostLatch = false;
     state.prevThrottle = input.forward ? 1 : 0;
 
+    const fx = Math.sin(aimHeading);
+    const fz = Math.cos(aimHeading);
+    const rx = Math.cos(aimHeading);
+    const rz = -Math.sin(aimHeading);
+
+    let wishX = 0;
+    let wishZ = 0;
+    if (input.forward) {
+      wishX += fx;
+      wishZ += fz;
+    }
+    if (input.backward) {
+      wishX -= fx;
+      wishZ -= fz;
+    }
+    if (input.right) {
+      wishX += rx;
+      wishZ += rz;
+    }
+    if (input.left) {
+      wishX -= rx;
+      wishZ -= rz;
+    }
+    const wishLen = Math.hypot(wishX, wishZ);
+    if (wishLen > 1e-4) {
+      wishX /= wishLen;
+      wishZ /= wishLen;
+    }
+
+    const cruise = 16;
+    const accel = wishLen > 0 ? 5.5 : 4.2;
+    let vx = damp(velocity.x, wishX * cruise, accel, dt);
+    let vz = damp(velocity.y, wishZ * cruise, accel, dt);
+
+    // Vertical hover — Space up, Shift down; otherwise hold altitude.
+    const climb = (input.jump ? 1 : 0) - (input.down ? 1 : 0);
+    const verticalTarget = climb * 14;
+    state.vy = damp(state.vy, verticalTarget, climb !== 0 ? 6 : 8, dt);
+
     let posePitch = state.flightPitch;
-    let poseRoll = state.steer * 0.42;
-    let move = 0;
+    let poseRoll = state.flightRoll;
 
     if (state.stunt) {
       state.stuntTime += dt;
       const t = state.stuntTime;
       if (state.stunt === "boom") {
-        move = 54;
-        posePitch = -0.14;
-        poseRoll = Math.sin(t * 18) * 0.08;
+        vx = fx * 48;
+        vz = fz * 48;
+        posePitch = -0.1;
+        poseRoll = Math.sin(t * 18) * 0.06;
         if (Math.random() < 0.7) {
           particles.emit({
             position: new THREE.Vector3(position.x, position.y + 0.4, position.z),
-            velocity: new THREE.Vector3(-Math.sin(state.heading) * 6, 0.4, -Math.cos(state.heading) * 6),
+            velocity: new THREE.Vector3(-fx * 6, 0.4, -fz * 6),
             color: "#d8fff8",
             size: 0.7,
             life: 0.35,
@@ -515,84 +552,50 @@ export async function createVehicle({ spawn, heading = 0, groundHeight, terrain,
             count: 2,
           });
         }
-        if (t >= 0.52) {
-          state.stunt = null;
-          state.airspeed = Math.max(state.airspeed, 26);
-        }
-      } else if (state.stunt === "uturn") {
-        const u = Math.min(1, t / 0.95);
-        posePitch = -u * Math.PI;
-        poseRoll = Math.sin(u * Math.PI) * 0.8;
-        move = 16;
-        position.y += Math.sin(u * Math.PI) * 18 * dt;
-        if (t >= 0.95) {
-          state.heading += Math.PI;
-          state.stunt = null;
-          posePitch = 0;
-        }
+        if (t >= 0.52) state.stunt = null;
       } else {
-        // Drop legacy stunts (dash / loop / somersault) into a clean exit.
         state.stunt = null;
       }
     } else {
-      const boosting = !!input.boost;
-      const cruise = boosting ? 28 : 16;
-      const climbRate = boosting ? 18 : 11;
-      const descendRate = 15;
-
-      if (input.forward) {
-        // Push forward: fly + automatically ascend; nose tilts up.
-        state.airspeed = damp(state.airspeed, cruise, 2.2, dt);
-        position.y += climbRate * dt;
-        posePitch = damp(state.flightPitch, -0.34, 6, dt);
-      } else if (input.backward) {
-        // Pull back: slow down and descend; nose tilts down.
-        state.airspeed = damp(state.airspeed, 0, 2.6, dt);
-        position.y -= descendRate * dt;
-        posePitch = damp(state.flightPitch, 0.28, 6, dt);
-      } else {
-        // Release: hold altitude, bleed speed, level out.
-        state.airspeed = damp(state.airspeed, 0, 1.35, dt);
-        posePitch = damp(state.flightPitch, 0, 5, dt);
-      }
-      state.airspeed = Math.max(0, state.airspeed);
-      move = state.airspeed;
+      // Stay mostly level; slight visual bank toward move direction.
+      const localFwd = vx * fx + vz * fz;
+      const localRight = vx * rx + vz * rz;
+      posePitch = damp(state.flightPitch, THREE.MathUtils.clamp(-localFwd * 0.018, -0.14, 0.14), 7, dt);
+      poseRoll = damp(state.flightRoll, THREE.MathUtils.clamp(-localRight * 0.022, -0.18, 0.18), 7, dt);
     }
 
-    if (!state.stunt) {
-      const turn = state.steer * 2.05 * dt;
-      state.heading += turn;
-      look.turnCamera?.(turn);
-    }
-
-    const signedSpeed = Math.max(0, state.stunt ? move : state.airspeed);
-    const flyHeading = state.heading;
-    const nextX = position.x + Math.sin(flyHeading) * signedSpeed * dt;
-    const nextZ = position.z + Math.cos(flyHeading) * signedSpeed * dt;
+    let nextX = position.x + vx * dt;
+    let nextZ = position.z + vz * dt;
     const limit = Math.hypot(nextX, nextZ);
-    if (limit > WORLD_LIMIT && state.stunt !== "uturn") {
-      startStunt("uturn");
-      position.x *= WORLD_LIMIT / Math.max(limit, 1e-3);
-      position.z *= WORLD_LIMIT / Math.max(limit, 1e-3);
-    } else if (limit > WORLD_LIMIT) {
-      position.x = (nextX / limit) * WORLD_LIMIT;
-      position.z = (nextZ / limit) * WORLD_LIMIT;
-    } else {
-      position.x = nextX;
-      position.z = nextZ;
+    if (limit > WORLD_LIMIT) {
+      const scale = WORLD_LIMIT / limit;
+      nextX *= scale;
+      nextZ *= scale;
+      vx *= 0.35;
+      vz *= 0.35;
     }
+    position.x = nextX;
+    position.z = nextZ;
+    position.y += state.vy * dt;
 
     const floor = groundHeight(position.x, position.z) + FLY_CLEARANCE;
-    if (position.y < floor) position.y = floor;
-    if (position.y > FLY_CEILING) position.y = FLY_CEILING;
+    if (position.y < floor) {
+      position.y = floor;
+      if (state.vy < 0) state.vy = 0;
+    }
+    if (position.y > FLY_CEILING) {
+      position.y = FLY_CEILING;
+      if (state.vy > 0) state.vy = 0;
+    }
 
-    velocity.set(Math.sin(flyHeading) * signedSpeed, Math.cos(flyHeading) * signedSpeed);
-    state.airspeed = signedSpeed;
+    velocity.set(vx, vz);
+    const speed = Math.hypot(vx, vz);
+    state.airspeed = speed;
+    state.steer = damp(state.steer, THREE.MathUtils.clamp(-(vx * rx + vz * rz) * 0.08, -1, 1), 8, dt);
     state.flightPitch = posePitch;
     state.flightRoll = poseRoll;
     state.pitch = posePitch;
     state.roll = poseRoll;
-    state.vy = 0;
     state.grounded = false;
     state.inWater = false;
     state.bodyPitch = posePitch;
@@ -604,7 +607,7 @@ export async function createVehicle({ spawn, heading = 0, groundHeight, terrain,
       safe.heading = state.heading;
     }
 
-    syncVisuals(dt, input, Math.abs(signedSpeed));
+    syncVisuals(dt, input, speed);
   };
 
   const update = (dt, input, look = {}) => {
